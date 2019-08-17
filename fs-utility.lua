@@ -206,7 +206,7 @@ local function fileSync(source, target, info)
             local buf2, err2 = m.loadFile(target)
             if buf1 and buf2 then
                 if buf1 ~= buf2 then
-                    if fsCopy(source, target) then
+                    if fsCopy(source, target, info) then
                         info.mod[#info.mod+1] = target:string()
                     end
                 end
@@ -219,7 +219,7 @@ local function fileSync(source, target, info)
                 end
             end
         else
-            if fsCopy(source, target) then
+            if fsCopy(source, target, info) then
                 info.add[#info.add+1] = target:string()
             end
         end
