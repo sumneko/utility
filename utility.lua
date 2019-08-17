@@ -23,7 +23,7 @@ end
 
 local function isInteger(n)
     if mathType then
-        return tableConcat(n) == 'integer'
+        return mathType(n) == 'integer'
     else
         return type(n) == 'number' and n % 1 == 0
     end
