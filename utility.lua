@@ -15,6 +15,8 @@ local getmetatable = getmetatable
 local mathAbs      = math.abs
 local ioOpen       = io.open
 
+_ENV = nil
+
 local function formatNumber(n)
     local str = ('%.10f'):format(n)
     str = str:gsub('%.?0*$', '')
