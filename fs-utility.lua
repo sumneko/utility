@@ -147,7 +147,7 @@ local function fileCopy(source, target, info)
             local buf2, err2 = m.loadFile(target)
             if buf1 and buf2 then
                 if buf1 ~= buf2 then
-                    if fsCopy(source, target) then
+                    if fsCopy(source, target, info) then
                         info.mod[#info.mod+1] = target:string()
                     end
                 end
@@ -160,7 +160,7 @@ local function fileCopy(source, target, info)
                 end
             end
         else
-            if fsCopy(source, target) then
+            if fsCopy(source, target, info) then
                 info.add[#info.add+1] = target:string()
             end
         end
@@ -277,7 +277,7 @@ function m.fileRemove(path)
     local info = fileInfo()
     path = fsAbsolute(path, info)
 
-    fileRemove(path)
+    fileRemove(path, info)
 
     return info
 end
