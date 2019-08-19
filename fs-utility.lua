@@ -101,7 +101,7 @@ local function fsExists(path, info)
 end
 
 local function fsCopy(source, target, info)
-    local suc, res = pcall(fs.copy_file, source, target)
+    local suc, res = pcall(fs.copy_file, source, target, true)
     if not suc then
         info.err[#info.err+1] = res
         return false
