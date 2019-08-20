@@ -118,19 +118,21 @@ local function fsCreateDirectories(path, info)
     return true
 end
 
-local function fileRemove(path, info)
+local function fileRemove(path, info, optional)
+    if optional.onRemove and optional.onRemove(path) == false then
+        return
+    end
     if fsIsDirectory(path, info) then
         for child in path:list_directory() do
-            fileRemove(child, info)
+            fileRemove(child, info, optional)
         end
-    else
-        if fsRemove(path, info) then
-            info.del[#info.del+1] = path:string()
-        end
+    end
+    if fsRemove(path, info) then
+        info.del[#info.del+1] = path:string()
     end
 end
 
-local function fileCopy(source, target, info)
+local function fileCopy(source, target, info, optional)
     local isDir1   = fsIsDirectory(source, info)
     local isDir2   = fsIsDirectory(target, info)
     local isExists = fsExists(target, info)
@@ -138,7 +140,7 @@ local function fileCopy(source, target, info)
         if isDir2 or fsCreateDirectories(target) then
             for filePath in source:list_directory() do
                 local name = filePath:filename()
-                fileCopy(filePath, target / name, info)
+                fileCopy(filePath, target / name, info, optional)
             end
         end
     else
@@ -167,7 +169,7 @@ local function fileCopy(source, target, info)
     end
 end
 
-local function fileSync(source, target, info)
+local function fileSync(source, target, info, optional)
     local isDir1   = fsIsDirectory(source, info)
     local isDir2   = fsIsDirectory(target, info)
     local isExists = fsExists(target, info)
@@ -180,26 +182,26 @@ local function fileSync(source, target, info)
             for filePath in source:list_directory() do
                 local name = filePath:filename()
                 local targetPath = target / name
-                fileSync(filePath, targetPath, info)
+                fileSync(filePath, targetPath, info, optional)
                 fileList[targetPath] = nil
             end
             for path in pairs(fileList) do
-                fileRemove(path, info)
+                fileRemove(path, info, optional)
             end
         else
             if isExists then
-                fileRemove(target, info)
+                fileRemove(target, info, optional)
             end
             if fsCreateDirectories(target) then
                 for filePath in source:list_directory() do
                     local name = filePath:filename()
-                    fileCopy(filePath, target / name, info)
+                    fileCopy(filePath, target / name, info, optional)
                 end
             end
         end
     else
         if isDir2 then
-            fileRemove(target, info)
+            fileRemove(target, info, optional)
         end
         if isExists then
             local buf1, err1 = m.loadFile(source)
@@ -273,11 +275,12 @@ function m.fileList()
 end
 
 --- 删除文件（夹）
-function m.fileRemove(path)
+function m.fileRemove(path, optional)
     local info = fileInfo()
+    optional = optional or {}
     path = fsAbsolute(path, info)
 
-    fileRemove(path, info)
+    fileRemove(path, info, optional)
 
     return info
 end
@@ -286,12 +289,13 @@ end
 ---@param source string
 ---@param target string
 ---@return table
-function m.fileCopy(source, target)
+function m.fileCopy(source, target, optional)
     local info = fileInfo()
+    optional = optional or {}
     source = fsAbsolute(source, info)
     target = fsAbsolute(target, info)
 
-    fileCopy(source, target, info)
+    fileCopy(source, target, info, optional)
 
     return info
 end
@@ -300,12 +304,13 @@ end
 ---@param source string
 ---@param target string
 ---@return table
-function m.fileSync(source, target)
+function m.fileSync(source, target, optional)
     local info = fileInfo()
+    optional = optional or {}
     source = fsAbsolute(source, info)
     target = fsAbsolute(target, info)
 
-    fileSync(source, target, info)
+    fileSync(source, target, info, optional)
 
     return info
 end
