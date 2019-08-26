@@ -228,9 +228,9 @@ local function fileSync(source, target, optional)
 end
 
 --- 文件列表
-function m.fileList()
+function m.fileList(optional)
+    optional = optional or buildOptional()
     local os = platform.OS
-    local optional = buildOptional()
     local keyMap = {}
     local fileList = {}
     local function computeKey(path)
