@@ -47,100 +47,100 @@ function m.saveFile(path, content)
     end
 end
 
-local function fileInfo()
-    local info = {
+local function buildOptional()
+    local optional = {
         add = {},
         del = {},
         mod = {},
         err = {},
     }
-    return info
+    return optional
 end
 
-local function fsAbsolute(path, info)
+local function fsAbsolute(path, optional)
     if type(path) == 'string' then
         local suc, res = pcall(fs.path, path)
         if not suc then
-            info.err[#info.err+1] = res
+            optional.err[#optional.err+1] = res
             return nil
         end
         path = res
     end
     local suc, res = pcall(fs.absolute, path)
     if not suc then
-        info.err[#info.err+1] = res
+        optional.err[#optional.err+1] = res
         return nil
     end
     return res
 end
 
-local function fsIsDirectory(path, info)
+local function fsIsDirectory(path, optional)
     local suc, res = pcall(fs.is_directory, path)
     if not suc then
-        info.err[#info.err+1] = res
+        optional.err[#optional.err+1] = res
         return false
     end
     return res
 end
 
-local function fsRemove(path, info)
+local function fsRemove(path, optional)
     local suc, res = pcall(fs.remove, path)
     if not suc then
-        info.err[#info.err+1] = res
+        optional.err[#optional.err+1] = res
     end
-    info.del[#info.del+1] = path:string()
+    optional.del[#optional.del+1] = path:string()
 end
 
-local function fsExists(path, info)
+local function fsExists(path, optional)
     local suc, res = pcall(fs.exists, path)
     if not suc then
-        info.err[#info.err+1] = res
+        optional.err[#optional.err+1] = res
         return false
     end
     return res
 end
 
-local function fsCopy(source, target, info)
+local function fsCopy(source, target, optional)
     local suc, res = pcall(fs.copy_file, source, target, true)
     if not suc then
-        info.err[#info.err+1] = res
+        optional.err[#optional.err+1] = res
         return false
     end
     return true
 end
 
-local function fsCreateDirectories(path, info)
+local function fsCreateDirectories(path, optional)
     local suc, res = pcall(fs.create_directories, path)
     if not suc then
-        info.err[#info.err+1] = res
+        optional.err[#optional.err+1] = res
         return false
     end
     return true
 end
 
-local function fileRemove(path, info, optional)
+local function fileRemove(path, optional)
     if optional.onRemove and optional.onRemove(path) == false then
         return
     end
-    if fsIsDirectory(path, info) then
+    if fsIsDirectory(path, optional) then
         for child in path:list_directory() do
-            fileRemove(child, info, optional)
+            fileRemove(child, optional)
         end
     end
-    if fsRemove(path, info) then
-        info.del[#info.del+1] = path:string()
+    if fsRemove(path, optional) then
+        optional.del[#optional.del+1] = path:string()
     end
 end
 
-local function fileCopy(source, target, info, optional)
-    local isDir1   = fsIsDirectory(source, info)
-    local isDir2   = fsIsDirectory(target, info)
-    local isExists = fsExists(target, info)
+local function fileCopy(source, target, optional)
+    local isDir1   = fsIsDirectory(source, optional)
+    local isDir2   = fsIsDirectory(target, optional)
+    local isExists = fsExists(target, optional)
     if isDir1 then
         if isDir2 or fsCreateDirectories(target) then
             for filePath in source:list_directory() do
                 local name = filePath:filename()
-                fileCopy(filePath, target / name, info, optional)
+                fileCopy(filePath, target / name, optional)
             end
         end
     else
@@ -149,30 +149,30 @@ local function fileCopy(source, target, info, optional)
             local buf2, err2 = m.loadFile(target)
             if buf1 and buf2 then
                 if buf1 ~= buf2 then
-                    if fsCopy(source, target, info) then
-                        info.mod[#info.mod+1] = target:string()
+                    if fsCopy(source, target, optional) then
+                        optional.mod[#optional.mod+1] = target:string()
                     end
                 end
             else
                 if not buf1 then
-                    info.err[#info.err+1] = err1
+                    optional.err[#optional.err+1] = err1
                 end
                 if not buf2 then
-                    info.err[#info.err+1] = err2
+                    optional.err[#optional.err+1] = err2
                 end
             end
         else
-            if fsCopy(source, target, info) then
-                info.add[#info.add+1] = target:string()
+            if fsCopy(source, target, optional) then
+                optional.add[#optional.add+1] = target:string()
             end
         end
     end
 end
 
-local function fileSync(source, target, info, optional)
-    local isDir1   = fsIsDirectory(source, info)
-    local isDir2   = fsIsDirectory(target, info)
-    local isExists = fsExists(target, info)
+local function fileSync(source, target, optional)
+    local isDir1   = fsIsDirectory(source, optional)
+    local isDir2   = fsIsDirectory(target, optional)
+    local isExists = fsExists(target, optional)
     if isDir1 then
         if isDir2 then
             local fileList = m.fileList()
@@ -182,47 +182,47 @@ local function fileSync(source, target, info, optional)
             for filePath in source:list_directory() do
                 local name = filePath:filename()
                 local targetPath = target / name
-                fileSync(filePath, targetPath, info, optional)
+                fileSync(filePath, targetPath, optional)
                 fileList[targetPath] = nil
             end
             for path in pairs(fileList) do
-                fileRemove(path, info, optional)
+                fileRemove(path, optional)
             end
         else
             if isExists then
-                fileRemove(target, info, optional)
+                fileRemove(target, optional)
             end
             if fsCreateDirectories(target) then
                 for filePath in source:list_directory() do
                     local name = filePath:filename()
-                    fileCopy(filePath, target / name, info, optional)
+                    fileCopy(filePath, target / name, optional)
                 end
             end
         end
     else
         if isDir2 then
-            fileRemove(target, info, optional)
+            fileRemove(target, optional)
         end
         if isExists then
             local buf1, err1 = m.loadFile(source)
             local buf2, err2 = m.loadFile(target)
             if buf1 and buf2 then
                 if buf1 ~= buf2 then
-                    if fsCopy(source, target, info) then
-                        info.mod[#info.mod+1] = target:string()
+                    if fsCopy(source, target, optional) then
+                        optional.mod[#optional.mod+1] = target:string()
                     end
                 end
             else
                 if not buf1 then
-                    info.err[#info.err+1] = err1
+                    optional.err[#optional.err+1] = err1
                 end
                 if not buf2 then
-                    info.err[#info.err+1] = err2
+                    optional.err[#optional.err+1] = err2
                 end
             end
         else
-            if fsCopy(source, target, info) then
-                info.add[#info.add+1] = target:string()
+            if fsCopy(source, target, optional) then
+                optional.add[#optional.add+1] = target:string()
             end
         end
     end
@@ -231,11 +231,11 @@ end
 --- 文件列表
 function m.fileList()
     local os = platform.OS
-    local info = fileInfo()
+    local optional = buildOptional()
     local keyMap = {}
     local fileList = {}
     local function computeKey(path)
-        path = fsAbsolute(path, info)
+        path = fsAbsolute(path, optional)
         if not path then
             return nil
         end
@@ -276,13 +276,12 @@ end
 
 --- 删除文件（夹）
 function m.fileRemove(path, optional)
-    local info = fileInfo()
-    optional = optional or {}
-    path = fsAbsolute(path, info)
+    optional = optional or buildOptional()
+    path = fsAbsolute(path, optional)
 
-    fileRemove(path, info, optional)
+    fileRemove(path, optional)
 
-    return info
+    return optional
 end
 
 --- 复制文件（夹）
@@ -290,14 +289,13 @@ end
 ---@param target string
 ---@return table
 function m.fileCopy(source, target, optional)
-    local info = fileInfo()
-    optional = optional or {}
-    source = fsAbsolute(source, info)
-    target = fsAbsolute(target, info)
+    optional = optional or buildOptional()
+    source = fsAbsolute(source, optional)
+    target = fsAbsolute(target, optional)
 
-    fileCopy(source, target, info, optional)
+    fileCopy(source, target, optional)
 
-    return info
+    return optional
 end
 
 --- 同步文件（夹）
@@ -305,14 +303,13 @@ end
 ---@param target string
 ---@return table
 function m.fileSync(source, target, optional)
-    local info = fileInfo()
-    optional = optional or {}
-    source = fsAbsolute(source, info)
-    target = fsAbsolute(target, info)
+    optional = optional or buildOptional()
+    source = fsAbsolute(source, optional)
+    target = fsAbsolute(target, optional)
 
-    fileSync(source, target, info, optional)
+    fileSync(source, target, optional)
 
-    return info
+    return optional
 end
 
 return m
