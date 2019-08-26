@@ -47,13 +47,12 @@ function m.saveFile(path, content)
     end
 end
 
-local function buildOptional()
-    local optional = {
-        add = {},
-        del = {},
-        mod = {},
-        err = {},
-    }
+local function buildOptional(optional)
+    optional     = optional     or {}
+    optional.add = optional.add or {}
+    optional.del = optional.add or {}
+    optional.mod = optional.add or {}
+    optional.err = optional.add or {}
     return optional
 end
 
@@ -276,7 +275,7 @@ end
 
 --- 删除文件（夹）
 function m.fileRemove(path, optional)
-    optional = optional or buildOptional()
+    optional = buildOptional(optional)
     path = fsAbsolute(path, optional)
 
     fileRemove(path, optional)
@@ -289,7 +288,7 @@ end
 ---@param target string
 ---@return table
 function m.fileCopy(source, target, optional)
-    optional = optional or buildOptional()
+    optional = buildOptional(optional)
     source = fsAbsolute(source, optional)
     target = fsAbsolute(target, optional)
 
@@ -303,7 +302,7 @@ end
 ---@param target string
 ---@return table
 function m.fileSync(source, target, optional)
-    optional = optional or buildOptional()
+    optional = buildOptional(optional)
     source = fsAbsolute(source, optional)
     target = fsAbsolute(target, optional)
 
