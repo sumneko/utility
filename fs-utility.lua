@@ -50,9 +50,9 @@ end
 local function buildOptional(optional)
     optional     = optional     or {}
     optional.add = optional.add or {}
-    optional.del = optional.add or {}
-    optional.mod = optional.add or {}
-    optional.err = optional.add or {}
+    optional.del = optional.del or {}
+    optional.mod = optional.mod or {}
+    optional.err = optional.err or {}
     return optional
 end
 
@@ -229,7 +229,7 @@ end
 
 --- 文件列表
 function m.fileList(optional)
-    optional = optional or buildOptional()
+    optional = optional or buildOptional(optional)
     local os = platform.OS
     local keyMap = {}
     local fileList = {}
