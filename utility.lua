@@ -93,8 +93,8 @@ function m.dump(tbl, option)
         for key in pairs(tbl) do
             if type(key) == 'string' then
                 if not key:match('^[%a_][%w_]*$')
-                or #key >= 32
                 or RESERVED[key]
+                or option['longStringKey']
                 then
                     keymap[key] = ('[%q] = '):format(key)
                 else
