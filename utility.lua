@@ -109,9 +109,13 @@ function m.dump(tbl, option)
         end
         local mt = getmetatable(tbl)
         if not mt or not mt.__pairs then
-            tableSort(keys, function (a, b)
-                return keymap[a] < keymap[b]
-            end)
+            if option['sorter'] then
+                option['sorter'](keys, keymap)
+            else
+                tableSort(keys, function (a, b)
+                    return keymap[a] < keymap[b]
+                end)
+            end
         end
         for _, key in ipairs(keys) do
             local keyWord = keymap[key]
