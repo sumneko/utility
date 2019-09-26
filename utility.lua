@@ -146,7 +146,7 @@ function m.dump(tbl, option)
             elseif tp == 'string' then
                 lines[#lines+1] = ('%s%s%q,'):format(TAB[tab+1], keyWord, value)
             elseif tp == 'number' then
-                lines[#lines+1] = ('%s%s%s,'):format(TAB[tab+1], keyWord, formatNumber(value))
+                lines[#lines+1] = ('%s%s%s,'):format(TAB[tab+1], keyWord, (option.number or formatNumber)(value))
             elseif tp == 'nil' then
             else
                 lines[#lines+1] = ('%s%s%s,'):format(TAB[tab+1], keyWord, tostring(value))
