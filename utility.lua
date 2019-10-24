@@ -384,4 +384,10 @@ function m.pack(t)
     return pack(1)
 end
 
+--- defer
+local deferMT = { __close = function (self) self[1]() end }
+function m.defer(callback)
+    return setmetatable({ callback }, deferMT)
+end
+
 return m
