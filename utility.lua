@@ -286,7 +286,7 @@ function m.counter(init, step)
     if not step then
         step = 1
     end
-    local current = init and (init - 1) or -1
+    local current = init and (init - 1) or 0
     return function ()
         current = current + step
         return current
