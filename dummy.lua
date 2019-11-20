@@ -58,40 +58,44 @@ mt.__call     = function (self) return self end
 mt.__pairs    = function (self) end
 mt.__ipairs   = function (self) end
 if _VERSION == 'Lua 5.3' or _VERSION == 'Lua 5.4' then
-    mt.__idiv      = load[[
+    local env = { DUMMY = DUMMY }
+    local function loadDummy(str)
+        return load(str, str, 't', env)
+    end
+    mt.__idiv      = loadDummy[[
         local a, b = ...
         if a == DUMMY then a = 0 end
         if b == DUMMY then b = 0 end
         return a // b
     ]]
-    mt.__band      = load[[
+    mt.__band      = loadDummy[[
         local a, b = ...
         if a == DUMMY then a = 0 end
         if b == DUMMY then b = 0 end
         return a & b
     ]]
-    mt.__bor       = load[[
+    mt.__bor       = loadDummy[[
         local a, b = ...
         if a == DUMMY then a = 0 end
         if b == DUMMY then b = 0 end
         return a | b
     ]]
-    mt.__bxor      = load[[
+    mt.__bxor      = loadDummy[[
         local a, b = ...
         if a == DUMMY then a = 0 end
         if b == DUMMY then b = 0 end
         return a ~ b
     ]]
-    mt.__bnot      = load[[
+    mt.__bnot      = loadDummy[[
         return ~ 0
     ]]
-    mt.__shl       = load[[
+    mt.__shl       = loadDummy[[
         local a, b = ...
         if a == DUMMY then a = 0 end
         if b == DUMMY then b = 0 end
         return a << b
     ]]
-    mt.__shr       = load[[
+    mt.__shr       = loadDummy[[
         local a, b = ...
         if a == DUMMY then a = 0 end
         if b == DUMMY then b = 0 end
