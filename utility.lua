@@ -392,4 +392,43 @@ function m.defer(callback)
     return setmetatable({ callback }, deferMT)
 end
 
+local esc = {
+    ["'"]  = [[\']],
+    ['"']  = [[\"]],
+    ['\r'] = [[\r]],
+    ['\n'] = '\\\n',
+}
+
+function m.viewString(str, quo)
+    if not quo then
+        if not str:find("'", 1, true) and str:find('"', 1, true) then
+            quo = "'"
+        else
+            quo = '"'
+        end
+    end
+    if quo == "'" then
+        return quo .. str:gsub([=[['\r\n]]=], esc) .. quo
+    elseif quo == '"' then
+        return quo .. str:gsub([=[["\r\n]]=], esc) .. quo
+    else
+        if str:find '\r' then
+            return m.viewString(str)
+        end
+        local eqnum = #quo - 2
+        local fsymb = ']' .. ('='):rep(eqnum) .. ']'
+        if not str:find(fsymb, 1, true) then
+            return quo .. str .. fsymb
+        end
+        for i = 0, 10 do
+            local fsymb = ']' .. ('='):rep(i) .. ']'
+            if not str:find(fsymb, 1, true) then
+                local ssymb = '[' .. ('='):rep(i) .. '['
+                return ssymb .. str .. fsymb
+            end
+        end
+        return m.viewString(str)
+    end
+end
+
 return m
