@@ -129,7 +129,11 @@ end
 
 function dfs:parent_path()
     local new = m.dummyFS(self.files)
-    new.path = self.path:gsub('[/\\]+[^/\\]*$', '')
+    if self.path:find('[/\\]') then
+        new.path = self.path:gsub('[/\\]+[^/\\]*$', '')
+    else
+        new.path = ''
+    end
     return new
 end
 
@@ -385,7 +389,7 @@ local function fileCopy(source, target, optional)
     local isDir2   = fsIsDirectory(target, optional)
     local isExists = fsExists(target, optional)
     if isDir1 then
-        if isDir2 or fsCreateDirectories(target) then
+        if isDir2 or fsCreateDirectories(target, optional) then
             for filePath in source:list_directory() do
                 local name = filePath:filename():string()
                 fileCopy(filePath, target / name, optional)
