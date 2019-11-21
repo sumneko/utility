@@ -397,20 +397,13 @@ local function fileCopy(source, target, optional)
         end
     else
         if isExists and not isDir2 then
-            local buf1, err1 = m.loadFile(source)
-            local buf2, err2 = m.loadFile(target)
+            local buf1 = fsLoad(source, optional)
+            local buf2 = fsLoad(target, optional)
             if buf1 and buf2 then
                 if buf1 ~= buf2 then
                     if fsCopy(source, target, optional) then
                         optional.mod[#optional.mod+1] = target:string()
                     end
-                end
-            else
-                if not buf1 then
-                    optional.err[#optional.err+1] = err1
-                end
-                if not buf2 then
-                    optional.err[#optional.err+1] = err2
                 end
             end
         else
