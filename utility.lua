@@ -401,15 +401,23 @@ local esc = {
 
 function m.viewString(str, quo)
     if not quo then
-        if not str:find("'", 1, true) and str:find('"', 1, true) then
+        if str:find('[\r\n]') then
+            quo = '[['
+        elseif not str:find("'", 1, true) and str:find('"', 1, true) then
             quo = "'"
         else
             quo = '"'
         end
     end
     if quo == "'" then
+        str = str:gsub('[\000-\008\011-\012\014-\031\127]', function (char)
+            return ('\\%03d'):format(char:byte())
+        end)
         return quo .. str:gsub([=[['\r\n]]=], esc) .. quo
     elseif quo == '"' then
+        str = str:gsub('[\000-\008\011-\012\014-\031\127]', function (char)
+            return ('\\%03d'):format(char:byte())
+        end)
         return quo .. str:gsub([=[["\r\n]]=], esc) .. quo
     else
         if str:find '\r' then
@@ -418,12 +426,14 @@ function m.viewString(str, quo)
         local eqnum = #quo - 2
         local fsymb = ']' .. ('='):rep(eqnum) .. ']'
         if not str:find(fsymb, 1, true) then
+            str = str:gsub('[\000-\008\011-\012\014-\031\127]', '')
             return quo .. str .. fsymb
         end
         for i = 0, 10 do
             local fsymb = ']' .. ('='):rep(i) .. ']'
             if not str:find(fsymb, 1, true) then
                 local ssymb = '[' .. ('='):rep(i) .. '['
+                str = str:gsub('[\000-\008\011-\012\014-\031\127]', '')
                 return ssymb .. str .. fsymb
             end
         end
@@ -431,23 +441,22 @@ function m.viewString(str, quo)
     end
 end
 
-function m.lines(buf)
-    local lines = {}
-    local current = 1
-    while true do
-        local pos = buf:find('[\r\n]', current)
-        if not pos then
-            lines[#lines+1] = buf:sub(current)
-            break
-        end
-        lines[#lines+1] = buf:sub(current, pos-1)
-        if buf:sub(current, pos, pos+1) == '\r\n' then
-            current = pos + 2
+function m.viewLiteral(v)
+    local tp = type(v)
+    if tp == 'nil' then
+        return 'nil'
+    elseif tp == 'string' then
+        return m.viewString(v)
+    elseif tp == 'boolean' then
+        return tostring(v)
+    elseif tp == 'number' then
+        if isInteger(v) then
+            return tostring(v)
         else
-            current = pos + 1
+            return formatNumber(v)
         end
     end
-    return lines
+    return nil
 end
 
 return m
