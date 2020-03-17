@@ -60,7 +60,6 @@ function m.encode(t)
     local result = {}
     result[1] = '<?xml version="1.0" encoding="UTF-8"?>'
     result[2] = encodeProp('root', t)
-    result[3] = ''
     return concat(result, '\r\n')
 end
 
