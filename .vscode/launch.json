@@ -10,7 +10,7 @@
             "name": "Launch",
             "program": "${workspaceFolder}/test.lua",
             "cpath": "${workspaceFolder}/bin/?.dll",
-            "luaRuntime": "5.4 64bit"
+            "luaVersion": "5.4"
         }
     ]
 }
