@@ -26,6 +26,14 @@ local TAB = setmetatable({}, { __index = function (self, n)
     return self[n]
 end})
 
+local function formatValue(v)
+    local str = tostring(v)
+    str = str:gsub('"', '\\"')
+    str = str:gsub('\r\n', '\\n')
+    str = str:gsub('[\r\n]', '\\n')
+    return '"' .. str .. '"'
+end
+
 local function encodeProp(name, t, tab)
     local props = {}
     local attrs = {name}
@@ -40,7 +48,7 @@ local function encodeProp(name, t, tab)
                 end
             end
         else
-            attrs[#attrs+1] = ('%s=%q'):format(k, tostring(v))
+            attrs[#attrs+1] = ('%s=%s'):format(k, formatValue(v))
         end
     end
     if #props == 0 then
