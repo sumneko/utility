@@ -28,6 +28,7 @@ end})
 
 local function formatValue(v)
     local str = tostring(v)
+    str = str:gsub('\\', '\\\\')
     str = str:gsub('"', '\\"')
     str = str:gsub('\r\n', '\\n')
     str = str:gsub('[\r\n]', '\\n')
