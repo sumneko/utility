@@ -8,9 +8,11 @@
             "type": "lua",
             "request": "launch",
             "name": "Launch",
+            "stopOnEntry": false,
             "program": "${workspaceFolder}/test.lua",
             "cpath": "${workspaceFolder}/bin/?.dll",
-            "luaVersion": "5.4"
+            "luaVersion": "5.4",
+            "luaArch": "x86_64"
         }
     ]
 }
