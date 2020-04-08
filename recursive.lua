@@ -1,10 +1,7 @@
 local wrap        = coroutine.wrap
-local cocreate    = coroutine.create
-local status      = coroutine.status
 local yield       = coroutine.yield
 local pack        = table.pack
 local unpack      = table.unpack
-local isyieldable = coroutine.isyieldable
 
 local Stacks = {}
 local YieldMark = {}
