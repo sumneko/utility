@@ -7,9 +7,6 @@ local Stacks = {}
 local YieldMark = {}
 
 local First = true
-local Finish = setmetatable({}, { __close = function ()
-    First = true
-end })
 
 local function createStack(func, ...)
     local s = {
@@ -79,8 +76,13 @@ function m.resolve(func, max)
     return function (...)
         if First then
             First = false
-            local finish <close> = Finish
-            return firstCall(max or 10000, func, ...)
+            local res = pack(xpcall(firstCall, debug.traceback, max or 10000, func, ...))
+            First = true
+            if res[1] == true then
+                return unpack(res, 2, res.n)
+            else
+                error(res[2])
+            end
         else
             return subCall(func, ...)
         end
