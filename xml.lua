@@ -6,8 +6,8 @@ local tableSort = table.sort
 local m = {}
 
 local xmlEscMap = {
-    ['\r'] = '&#x000A;',
-    ['\n'] = '&#x000D;',
+    ['\r'] = '\\r',
+    ['\n'] = '\\n',
     ['<']  = '&lt;',
     ['>']  = '&gt;',
     ['&']  = '&amp;',
