@@ -68,7 +68,7 @@ local xmltext = xml.encode {
                         id = '',
                         hotkey = 'W',
                         name = {
-                            zhCN = '压倒性优势',
+                            zhCN = '<压倒性优势>',
                         },
                         icon = {
                             value = 'xxxx.blp',

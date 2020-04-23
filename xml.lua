@@ -5,6 +5,16 @@ local tableSort = table.sort
 
 local m = {}
 
+local xmlEscMap = {
+    ['\r'] = '&#x000A;',
+    ['\n'] = '&#x000D;',
+    ['<']  = '&lt;',
+    ['>']  = '&gt;',
+    ['&']  = '&amp;',
+    ['"']  = '&quot;',
+    ["'"]  = '&apos;',
+}
+
 --- 排序后遍历
 ---@param t table
 local function sortPairs(t)
@@ -28,10 +38,7 @@ end})
 
 local function formatValue(v)
     local str = tostring(v)
-    str = str:gsub('\\', '\\\\')
-    str = str:gsub('"', '\\"')
-    str = str:gsub('\r\n', '\\n')
-    str = str:gsub('[\r\n]', '\\n')
+        : gsub([=[[\r\n%<%>%&%"%']]=], xmlEscMap)
     return '"' .. str .. '"'
 end
 
