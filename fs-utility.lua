@@ -560,4 +560,27 @@ function m.fileSync(source, target, optional)
     return optional
 end
 
+--- 遍历目录
+---@param root string
+function m.scan(root)
+    local function scanInDir(parent, callback)
+        for filename in (root / parent):list_directory() do
+            if fs.is_directory(filename) then
+                scanInDir(parent / filename:filename(), callback)
+            else
+                callback(parent / filename:filename())
+            end
+        end
+    end
+    local list = {}
+    scanInDir(fs.path '', function (path)
+        list[#list+1] = path
+    end)
+    local i = 0
+    return function ()
+        i = i + 1
+        return list[i]
+    end
+end
+
 return m
