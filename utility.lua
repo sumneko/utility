@@ -471,4 +471,32 @@ function m.revertTable(t)
     return t
 end
 
+function m.tableMultiRemove(t, index)
+    local mark = {}
+    for i = 1, #index do
+        local v = index[i]
+        mark[v] = true
+    end
+    local offset = 0
+    local me = 1
+    local len = #t
+    while true do
+        local it = me + offset
+        if it > len then
+            for i = me, len do
+                t[i] = nil
+            end
+            break
+        end
+        if mark[it] then
+            offset = offset + 1
+        else
+            if me ~= it then
+                t[me] = t[it]
+            end
+            me = me + 1
+        end
+    end
+end
+
 return m
