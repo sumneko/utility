@@ -371,30 +371,23 @@ local function fsCreateDirectories(path, optional)
 end
 
 local function fileRemove(path, optional)
-    local failed
+    if optional.onRemove and optional.onRemove(path) == false then
+        return
+    end
     if fsIsDirectory(path, optional) then
         for child in path:list_directory() do
-            local ok = fileRemove(child, optional)
-            if not ok then
-                failed = true
-            end
+            fileRemove(child, optional)
         end
-    else
-        if optional.onRemove and optional.onRemove(path) == false then
-            return false
-        end
-    end
-    if failed then
-        return false
     end
     if fsRemove(path, optional) then
         optional.del[#optional.del+1] = path:string()
-        return true
     end
-    return false
 end
 
 local function fileCopy(source, target, optional)
+    if optional.onCopy and optional.onCopy(source, target) == false then
+        return
+    end
     local isDir1   = fsIsDirectory(source, optional)
     local isDir2   = fsIsDirectory(target, optional)
     local isExists = fsExists(target, optional)
@@ -558,29 +551,6 @@ function m.fileSync(source, target, optional)
     fileSync(source, target, optional)
 
     return optional
-end
-
---- 遍历目录
----@param root string
-function m.scan(root)
-    local function scanInDir(parent, callback)
-        for filename in (root / parent):list_directory() do
-            if fs.is_directory(filename) then
-                scanInDir(parent / filename:filename(), callback)
-            else
-                callback(parent / filename:filename())
-            end
-        end
-    end
-    local list = {}
-    scanInDir(fs.path '', function (path)
-        list[#list+1] = path
-    end)
-    local i = 0
-    return function ()
-        i = i + 1
-        return list[i]
-    end
 end
 
 return m
