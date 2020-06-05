@@ -418,6 +418,9 @@ local function fileCopy(source, target, optional)
 end
 
 local function fileSync(source, target, optional)
+    if optional.onSync and optional.onSync(source, target) == false then
+        return
+    end
     local isDir1   = fsIsDirectory(source, optional)
     local isDir2   = fsIsDirectory(target, optional)
     local isExists = fsExists(target, optional)
