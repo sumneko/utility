@@ -397,6 +397,7 @@ local esc = {
     ['"']  = [[\"]],
     ['\r'] = [[\r]],
     ['\n'] = '\\\n',
+    ['\\'] = [[\\]],
 }
 
 function m.viewString(str, quo)
@@ -413,12 +414,12 @@ function m.viewString(str, quo)
         str = str:gsub('[\000-\008\011-\012\014-\031\127]', function (char)
             return ('\\%03d'):format(char:byte())
         end)
-        return quo .. str:gsub([=[['\r\n]]=], esc) .. quo
+        return quo .. str:gsub("['\r\n\\]", esc) .. quo
     elseif quo == '"' then
         str = str:gsub('[\000-\008\011-\012\014-\031\127]', function (char)
             return ('\\%03d'):format(char:byte())
         end)
-        return quo .. str:gsub([=[["\r\n]]=], esc) .. quo
+        return quo .. str:gsub('["\r\n\\]', esc) .. quo
     else
         if str:find '\r' then
             return m.viewString(str)
