@@ -422,7 +422,7 @@ function m.viewString(str, quo)
         return quo .. str:gsub('["\r\n\\]', esc) .. quo
     else
         if str:find '\r' then
-            return m.viewString(str)
+            return m.viewString(str, '"')
         end
         local eqnum = #quo - 2
         local fsymb = ']' .. ('='):rep(eqnum) .. ']'
