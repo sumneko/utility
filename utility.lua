@@ -13,6 +13,7 @@ local mathType     = math.type
 local mathCeil     = math.ceil
 local getmetatable = getmetatable
 local mathAbs      = math.abs
+local mathRandom   = math.random
 local ioOpen       = io.open
 
 _ENV = nil
@@ -467,6 +468,21 @@ function m.revertTable(t)
     end
     for x = 1, len // 2 do
         local y = len - x + 1
+        t[x], t[y] = t[y], t[x]
+    end
+    return t
+end
+
+function m.randomSortTable(t, max)
+    local len = #t
+    if len <= 1 then
+        return t
+    end
+    if max and max < len then
+        len = max
+    end
+    for x = 1, len do
+        local y = mathRandom(len)
         t[x], t[y] = t[y], t[x]
     end
     return t
