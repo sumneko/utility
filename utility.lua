@@ -478,10 +478,10 @@ function m.randomSortTable(t, max)
     if len <= 1 then
         return t
     end
-    if max and max < len then
-        len = max
+    if not max or max > len then
+        max = len
     end
-    for x = 1, len do
+    for x = 1, max do
         local y = mathRandom(len)
         t[x], t[y] = t[y], t[x]
     end
