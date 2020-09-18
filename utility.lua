@@ -15,6 +15,8 @@ local getmetatable = getmetatable
 local mathAbs      = math.abs
 local mathRandom   = math.random
 local ioOpen       = io.open
+local utf8Len      = utf8.len
+local mathHuge     = math.huge
 
 _ENV = nil
 
@@ -78,7 +80,7 @@ function m.dump(tbl, option)
     local lines = {}
     local mark = {}
     lines[#lines+1] = '{'
-    local function unpack(tbl, tab)
+    local function unpack(tbl, deep)
         mark[tbl] = (mark[tbl] or 0) + 1
         local keys = {}
         local keymap = {}
@@ -137,22 +139,24 @@ function m.dump(tbl, option)
             local value = tbl[key]
             local tp = type(value)
             if option['format'] and option['format'][key] then
-                lines[#lines+1] = ('%s%s%s,'):format(TAB[tab+1], keyWord, option['format'][key](value, unpack, tab+1))
+                lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, option['format'][key](value, unpack, deep+1))
             elseif tp == 'table' then
                 if mark[value] and mark[value] > 0 then
-                    lines[#lines+1] = ('%s%s%s,'):format(TAB[tab+1], keyWord, option['loop'] or '"<Loop>"')
+                    lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, option['loop'] or '"<Loop>"')
+                elseif deep >= (option['deep'] or mathHuge) then
+                    lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, '"<Deep>"')
                 else
-                    lines[#lines+1] = ('%s%s{'):format(TAB[tab+1], keyWord)
-                    unpack(value, tab+1)
-                    lines[#lines+1] = ('%s},'):format(TAB[tab+1])
+                    lines[#lines+1] = ('%s%s{'):format(TAB[deep+1], keyWord)
+                    unpack(value, deep+1)
+                    lines[#lines+1] = ('%s},'):format(TAB[deep+1])
                 end
             elseif tp == 'string' then
-                lines[#lines+1] = ('%s%s%q,'):format(TAB[tab+1], keyWord, value)
+                lines[#lines+1] = ('%s%s%q,'):format(TAB[deep+1], keyWord, value)
             elseif tp == 'number' then
-                lines[#lines+1] = ('%s%s%s,'):format(TAB[tab+1], keyWord, (option['number'] or formatNumber)(value))
+                lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, (option['number'] or formatNumber)(value))
             elseif tp == 'nil' then
             else
-                lines[#lines+1] = ('%s%s%s,'):format(TAB[tab+1], keyWord, tostring(value))
+                lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, tostring(value))
             end
         end
         mark[tbl] = mark[tbl] - 1
@@ -396,9 +400,8 @@ end
 local esc = {
     ["'"]  = [[\']],
     ['"']  = [[\"]],
-    ['\r'] = [[\\r]],
-    ['\n'] = [[\\n]],
-    ['\\'] = [[\\]],
+    ['\r'] = [[\r]],
+    ['\n'] = '\\\n',
 }
 
 function m.viewString(str, quo)
@@ -415,16 +418,13 @@ function m.viewString(str, quo)
         str = str:gsub('[\000-\008\011-\012\014-\031\127]', function (char)
             return ('\\%03d'):format(char:byte())
         end)
-        return quo .. str:gsub("['\r\n\\]", esc) .. quo
+        return quo .. str:gsub([=[['\r\n]]=], esc) .. quo
     elseif quo == '"' then
         str = str:gsub('[\000-\008\011-\012\014-\031\127]', function (char)
             return ('\\%03d'):format(char:byte())
         end)
-        return quo .. str:gsub('["\r\n\\]', esc) .. quo
+        return quo .. str:gsub([=[["\r\n]]=], esc) .. quo
     else
-        if str:find '\r' then
-            return m.viewString(str, '"')
-        end
         local eqnum = #quo - 2
         local fsymb = ']' .. ('='):rep(eqnum) .. ']'
         if not str:find(fsymb, 1, true) then
@@ -439,7 +439,7 @@ function m.viewString(str, quo)
                 return ssymb .. str .. fsymb
             end
         end
-        return m.viewString(str)
+        return m.viewString(str, '"')
     end
 end
 
@@ -459,6 +459,14 @@ function m.viewLiteral(v)
         end
     end
     return nil
+end
+
+function m.utf8Len(str, start, finish)
+    local len, pos = utf8Len(str, start, finish, true)
+    if len then
+        return len
+    end
+    return 1 + m.utf8Len(str, start, pos-1) + m.utf8Len(str, pos+1, finish)
 end
 
 function m.revertTable(t)
