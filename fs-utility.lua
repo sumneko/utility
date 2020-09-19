@@ -385,9 +385,6 @@ local function fileRemove(path, optional)
 end
 
 local function fileCopy(source, target, optional)
-    if optional.onCopy and optional.onCopy(source, target) == false then
-        return
-    end
     local isDir1   = fsIsDirectory(source, optional)
     local isDir2   = fsIsDirectory(target, optional)
     local isExists = fsExists(target, optional)
@@ -418,9 +415,6 @@ local function fileCopy(source, target, optional)
 end
 
 local function fileSync(source, target, optional)
-    if optional.onSync and optional.onSync(source, target) == false then
-        return
-    end
     local isDir1   = fsIsDirectory(source, optional)
     local isDir2   = fsIsDirectory(target, optional)
     local isExists = fsExists(target, optional)
@@ -554,6 +548,16 @@ function m.fileSync(source, target, optional)
     fileSync(source, target, optional)
 
     return optional
+end
+
+function m.scanDirectory(dir, callback)
+    for fullpath in dir:list_directory() do
+        if fs.is_directory(fullpath) then
+            m.scanDirectory(fullpath, callback)
+        else
+            callback(fullpath)
+        end
+    end
 end
 
 return m

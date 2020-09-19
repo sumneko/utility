@@ -524,4 +524,26 @@ function m.tableMultiRemove(t, index)
     end
 end
 
+function m.eachLine(text)
+    local offset = 1
+    local lineCount = 0
+    return function ()
+        if offset > #text then
+            return nil
+        end
+        lineCount = lineCount + 1
+        local nl = text:find('[\r\n]', offset)
+        if not nl then
+            return text:sub(offset)
+        end
+        local line = text:sub(offset, nl - 1)
+        if text:sub(nl, nl + 1) == '\r\n' then
+            offset = nl + 2
+        else
+            offset = nl + 1
+        end
+        return line
+    end
+end
+
 return m
