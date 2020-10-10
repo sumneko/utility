@@ -17,10 +17,18 @@ local mathRandom   = math.random
 local ioOpen       = io.open
 local utf8Len      = utf8.len
 local mathHuge     = math.huge
+local inf          = 1 / 0
+local nan          = 0 / 0
 
 _ENV = nil
 
 local function formatNumber(n)
+    if n == inf
+    or n == -inf
+    or n == nan
+    or n ~= n then -- IEEE 标准中，NAN 不等于自己。但是某些实现中没有遵守这个规则
+        return ('%q'):format(n)
+    end
     local str = ('%.10f'):format(n)
     str = str:gsub('%.?0*$', '')
     return str
