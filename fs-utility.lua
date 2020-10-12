@@ -50,6 +50,17 @@ function m.saveFile(path, content)
     end
 end
 
+function m.relative(path, base)
+    local sPath = fs.absolute(path):string()
+    local sBase = fs.absolute(base):string()
+    --TODO 先只支持最简单的情况
+    if  sPath:sub(1, #sBase):lower() == sBase:lower()
+    and sPath:sub(#sBase + 1, #sBase + 1):match '^[/\\]' then
+        return fs.path(sPath:sub(#sBase + 1):gsub('^[/\\]+', ''))
+    end
+    return nil
+end
+
 local function buildOptional(optional)
     optional     = optional     or {}
     optional.add = optional.add or {}
@@ -194,7 +205,7 @@ function dfs:createDirectories(path)
     if type(path) ~= 'string' then
         path = path:string()
     end
-    local paths = split(path, '[/\\]')
+    local paths = split(path, '[/\\]+')
     local current = self.files
     for i = 1, #paths do
         local sub = paths[i]
