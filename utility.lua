@@ -20,7 +20,7 @@ local mathHuge     = math.huge
 local inf          = 1 / 0
 local nan          = 0 / 0
 
-local _ENV = nil
+_ENV = nil
 
 local function formatNumber(n)
     if n == inf
@@ -542,7 +542,9 @@ function m.eachLine(text)
         lineCount = lineCount + 1
         local nl = text:find('[\r\n]', offset)
         if not nl then
-            return text:sub(offset)
+            local lastLine = text:sub(offset)
+            offset = #text + 1
+            return lastLine
         end
         local line = text:sub(offset, nl - 1)
         if text:sub(nl, nl + 1) == '\r\n' then
@@ -552,33 +554,6 @@ function m.eachLine(text)
         end
         return line
     end
-end
-
-function m.sortByScore(tbl, callbacks)
-    if type(callbacks) ~= 'table' then
-        callbacks = { callbacks }
-    end
-    local size = #callbacks
-    local scoreCache = {}
-    for i = 1, size do
-        scoreCache[i] = {}
-    end
-    tableSort(tbl, function (a, b)
-        for i = 1, size do
-            local callback = callbacks[i]
-            local cache    = scoreCache[i]
-            local sa       = cache[a] or callback(a)
-            local sb       = cache[b] or callback(b)
-            cache[a] = sa
-            cache[b] = sb
-            if sa > sb then
-                return true
-            elseif sa < sb then
-                return false
-            end
-        end
-        return false
-    end)
 end
 
 return m
