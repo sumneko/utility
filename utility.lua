@@ -29,6 +29,9 @@ local function formatNumber(n)
     or n ~= n then -- IEEE 标准中，NAN 不等于自己。但是某些实现中没有遵守这个规则
         return ('%q'):format(n)
     end
+    if mathType(n) == 'integer' then
+        return tostring(n)
+    end
     local str = ('%.10f'):format(n)
     str = str:gsub('%.?0*$', '')
     return str
