@@ -204,7 +204,10 @@ function m.equal(a, b)
         end
         return true
     elseif tp1 == 'number' then
-        return mathAbs(a - b) <= 1e-10
+        if mathAbs(a - b) <= 1e-10 then
+            return true
+        end
+        return tostring(a) == tostring(b)
     else
         return a == b
     end
