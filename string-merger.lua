@@ -4,7 +4,8 @@
 ---@field text   string  # 替换的文本
 
 ---@class string.merger.info: string.merger.diff
----@field delta integer  # 从开始到现在的差量值
+---@field cstart  integer # 转换后的开始字节
+---@field cfinish integer # 转换后的结束字节
 
 ---@alias string.merger.diffs string.merger.diff[]
 ---@alias string.merger.infos string.merger.info[]
@@ -63,11 +64,12 @@ function m.mergeDiff(text, diffs)
     local buf = {}
     local delta = 0
     for _, diff in ipairs(info) do
-        diff.delta = delta
+        diff.cstart  = diff.start  + delta
+        diff.cfinish = diff.cstart + #diff.text - 1
         buf[#buf+1] = text:sub(cur, diff.start - 1)
         buf[#buf+1] = diff.text
         cur = diff.finish + 1
-        delta = delta - (diff.finish - diff.start + 1) + #diff.text
+        delta = delta  + #diff.text - (diff.finish - diff.start + 1)
     end
     buf[#buf+1] = text:sub(cur)
     return table.concat(buf), info
@@ -80,9 +82,17 @@ end
 function m.getOffset(info, offset)
     local diff = getNearDiff(info, offset)
     if offset <= diff.finish then
-        return diff.start + diff.delta
+        return diff.cstart
     end
-    return offset + diff.start - diff.finish - 1 + #diff.text + diff.delta
+    return offset - diff.finish + diff.cfinish
+end
+
+---根据转换后的位置获取转换前的位置
+---@param info   string.merger.infos
+---@param offset integer
+---@return integer
+function m.getOffsetBack(info, offset)
+    
 end
 
 return m
