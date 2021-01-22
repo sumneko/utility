@@ -14,21 +14,21 @@
 ---@param diffs  table
 ---@param offset any
 ---@return string.merger.info
-local function getNearDiff(diffs, offset)
+local function getNearDiff(diffs, offset, key)
     local min = 1
     local max = #diffs
     while max > min do
         local middle = min + (max - min) // 2
         local diff  = diffs[middle]
         local ndiff = diffs[middle + 1]
-        if diff.start > offset then
+        if diff[key] > offset then
             max = middle
             goto CONTINUE
         end
         if not ndiff then
             return diff
         end
-        if ndiff.start > offset then
+        if ndiff[key] > offset then
             return diff
         end
         if min == middle then
@@ -80,7 +80,7 @@ end
 ---@param offset integer
 ---@return integer
 function m.getOffset(info, offset)
-    local diff = getNearDiff(info, offset)
+    local diff = getNearDiff(info, offset, 'start')
     if offset <= diff.finish then
         return diff.cstart
     end
@@ -92,7 +92,11 @@ end
 ---@param offset integer
 ---@return integer
 function m.getOffsetBack(info, offset)
-    
+    local diff = getNearDiff(info, offset, 'cstart')
+    if offset <= diff.cfinish then
+        return diff.start
+    end
+    return offset - diff.cfinish + diff.finish
 end
 
 return m
