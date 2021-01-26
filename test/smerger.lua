@@ -42,3 +42,49 @@ assert(sm.getOffsetBack(info, 10) == 6)
 assert(sm.getOffsetBack(info, 11) == 7)
 assert(sm.getOffsetBack(info, 12) == 8)
 assert(sm.getOffsetBack(info, 13) == 9)
+
+local function test1()
+    local text = [[
+--##
+local t: boolean
+local num: number
+
+print(t)
+]]
+
+    local diffs = {}
+    diffs[#diffs+1] = {
+        start  = 1,
+        finish = 4,
+        text   = '',
+    }
+
+    for localPos, colonPos, typeName, finish in text:gmatch '()local%s+[%w_]+()%s*%:%s*([%w_]+)()' do
+        diffs[#diffs+1] = {
+            start  = localPos,
+            finish = localPos - 1,
+            text   = ('---@type %s\n'):format(typeName),
+        }
+        diffs[#diffs+1] = {
+            start  = colonPos,
+            finish = finish - 1,
+            text   = '',
+        }
+    end
+
+    local result, info = sm.mergeDiff(text, diffs)
+
+    assert(result == [[
+
+---@type boolean
+local t
+---@type number
+local num
+
+print(t)
+]])
+
+    assert(sm.getOffset(info, 48) == 60)
+    assert(sm.getOffsetBack(info, 60) == 48)
+end
+test1()
