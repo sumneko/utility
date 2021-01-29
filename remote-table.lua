@@ -43,22 +43,27 @@ local function promise(callback)
 end
 
 function mt:__index(key)
+    local cache  = InterfaceMap[self].cache
+    if cache[key] ~= nil then
+        return cache[key]
+    end
     local method = getMethod(self, 'onGet')
     if not method then
         error('没有设置远程读接口!')
     end
     local value = method(key)
-    rawset(self, key, value)
+    cache[key] = value
     return value
 end
 
 function mt:__newindex(key, value)
+    local cache  = InterfaceMap[self].cache
     local method = getMethod(self, 'onSet')
     if not method then
         error('没有设置远程写接口!')
     end
     method(key, value)
-    rawset(self, key, value)
+    cache[key] = value
 end
 
 local m = {}
@@ -72,6 +77,7 @@ function m.create(tp)
     local rt = setmetatable({}, mt)
     InterfaceMap[rt] = {
         type  = tp,
+        cache = {},
         onSet = nil,
         onGet = nil,
     }
