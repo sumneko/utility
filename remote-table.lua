@@ -209,4 +209,13 @@ function m.resume(token, value)
     coroutine.resume(thread, value)
 end
 
+---清点挂起的请求
+function m.countHanging()
+    local c = 0
+    for _ in pairs(WaitingMap) do
+        c = c + 1
+    end
+    return c
+end
+
 return m
