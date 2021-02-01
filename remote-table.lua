@@ -28,9 +28,23 @@ local function getMethod(rt, name)
     return typeInterface[name]
 end
 
-local function promise(callback)
-    return function (...)
-        local token = callback(...)
+local function promiseSet(callback)
+    return function (key, value)
+        local token = callback(key, value)
+        if not token then
+            error('异步接口没有返回 token!')
+        end
+        if not coroutine.isyieldable() then
+            error('当前不可让出！')
+        end
+        WaitingMap[token] = coroutine.running()
+        return coroutine.yield()
+    end
+end
+
+local function promiseGet(callback)
+    return function (key)
+        local token = callback(key)
         if not token then
             error('异步接口没有返回 token!')
         end
@@ -129,7 +143,7 @@ function m.onAsyncGet(rt, callback)
     if type(callback) ~= 'function' then
         error('第2个参数不是function!')
     end
-    interface.onGet = promise(callback)
+    interface.onGet = promiseGet(callback)
 end
 
 ---设置远程的异步写接口
@@ -146,7 +160,7 @@ function m.onAsyncSet(rt, callback)
     if type(callback) ~= 'function' then
         error('第2个参数不是function!')
     end
-    interface.onSet = promise(callback)
+    interface.onSet = promiseSet(callback)
 end
 
 ---设置类的远程读接口
@@ -182,7 +196,7 @@ function m.onAsyncTypeGet(tp, callback)
     if type(callback) ~= 'function' then
         error('第2个参数不是function!')
     end
-    typeInterface.onGet = promise(callback)
+    typeInterface.onGet = promiseGet(callback)
 end
 
 ---设置类的远程写接口
@@ -196,7 +210,7 @@ function m.onAsyncTypeSet(tp, callback)
     if type(callback) ~= 'function' then
         error('第2个参数不是function!')
     end
-    interface.onSet = promise(callback)
+    interface.onSet = promiseSet(callback)
 end
 
 ---延续之前让出的远程读写
