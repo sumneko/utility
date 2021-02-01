@@ -2,9 +2,10 @@
 local mt = {}
 mt.__name  = 'remote-table'
 
-local InterfaceMap = setmetatable({}, { __mode = 'k' })
-local TypeMap      = {}
-local WaitingMap   = {}
+local InterfaceMap   = setmetatable({}, { __mode = 'k' })
+local TypeMap        = {}
+local WaitingMap     = {}
+local enableMergeGet = true
 
 local function getTypeMap(tp)
     if not TypeMap[tp] then
@@ -37,21 +38,45 @@ local function promiseSet(callback)
         if not coroutine.isyieldable() then
             error('当前不可让出！')
         end
-        WaitingMap[token] = coroutine.running()
+        WaitingMap[token] = {
+            thread = coroutine.running(),
+        }
         return coroutine.yield()
     end
 end
 
-local function promiseGet(callback)
+local function mergedGet(interface, key)
+    if not enableMergeGet then
+        return false
+    end
+    if not interface.mergeThreads then
+        interface.mergeThreads = {}
+    end
+    if not interface.mergeThreads[key] then
+        interface.mergeThreads[key] = {}
+        return false
+    end
+    interface.mergeThreads[key][#interface.mergeThreads[key]+1] = coroutine.running()
+    return true
+end
+
+local function promiseGet(callback, interface)
     return function (key)
+        if not coroutine.isyieldable() then
+            error('当前不可让出！')
+        end
+        if mergedGet(interface, key) then
+            return coroutine.yield()
+        end
         local token = callback(key)
         if not token then
             error('异步接口没有返回 token!')
         end
-        if not coroutine.isyieldable() then
-            error('当前不可让出！')
-        end
-        WaitingMap[token] = coroutine.running()
+        WaitingMap[token] = {
+            thread    = coroutine.running(),
+            key       = key,
+            interface = interface,
+        }
         return coroutine.yield()
     end
 end
@@ -143,7 +168,7 @@ function m.onAsyncGet(rt, callback)
     if type(callback) ~= 'function' then
         error('第2个参数不是function!')
     end
-    interface.onGet = promiseGet(callback)
+    interface.onGet = promiseGet(callback, interface)
 end
 
 ---设置远程的异步写接口
@@ -196,7 +221,7 @@ function m.onAsyncTypeGet(tp, callback)
     if type(callback) ~= 'function' then
         error('第2个参数不是function!')
     end
-    typeInterface.onGet = promiseGet(callback)
+    typeInterface.onGet = promiseGet(callback, typeInterface)
 end
 
 ---设置类的远程写接口
@@ -218,12 +243,34 @@ end
 ---@param token  any
 ---@param value? any
 function m.resume(token, value)
-    local thread = WaitingMap[token]
-    if not thread then
+    local waiting = WaitingMap[token]
+    if not waiting then
         error(('无法根据 token 找到让出的线程：%s'):format(token))
     end
     WaitingMap[token] = nil
+    local thread = waiting.thread
+    local interface = waiting.interface
+    local mergedThreads
+    if interface then
+        local key = waiting.key
+        mergedThreads = interface.mergeThreads and interface.mergeThreads[key]
+        if mergedThreads then
+            interface.mergeThreads[key] = nil
+        end
+    end
     coroutine.resume(thread, value)
+    if not mergedThreads then
+        return
+    end
+    for _, mergedThread in ipairs(mergedThreads) do
+        coroutine.resume(mergedThread, value)
+    end
+end
+
+---允许合并获取请求，默认是开启的
+---@param enable boolean
+function m.mergeGet(enable)
+    enableMergeGet = enable
 end
 
 ---清点挂起的请求
