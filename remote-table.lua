@@ -52,6 +52,9 @@ function mt:__index(key)
         error('没有设置远程读接口!')
     end
     local value = method(key)
+    if cache[key] ~= nil then
+        return cache[key]
+    end
     cache[key] = value
     return value
 end
