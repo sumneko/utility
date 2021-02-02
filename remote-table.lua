@@ -19,14 +19,12 @@ end
 
 local function getMethod(rt, name)
     local interface = InterfaceMap[rt]
-    if interface[name] then
+    if interface.type then
+        local typeInterface = TypeMap[interface.type]
+        return typeInterface[name]
+    else
         return interface[name]
     end
-    local typeInterface = TypeMap[interface.type]
-    if not typeInterface then
-        return nil
-    end
-    return typeInterface[name]
 end
 
 local function promiseSet(callback)
@@ -137,6 +135,9 @@ function m.onGet(rt, callback)
     if type(callback) ~= 'function' then
         error('第2个参数不是function!')
     end
+    if interface.type then
+        error('不能给共享类型的remotetable设置单独的方法')
+    end
     interface.onGet = callback
 end
 
@@ -150,6 +151,9 @@ function m.onSet(rt, callback)
     end
     if type(callback) ~= 'function' then
         error('第2个参数不是function!')
+    end
+    if interface.type then
+        error('不能给共享类型的remotetable设置单独的方法')
     end
     interface.onSet = callback
 end
@@ -168,6 +172,9 @@ function m.onAsyncGet(rt, callback)
     if type(callback) ~= 'function' then
         error('第2个参数不是function!')
     end
+    if interface.type then
+        error('不能给共享类型的remotetable设置单独的方法')
+    end
     interface.onGet = promiseGet(callback, interface)
 end
 
@@ -184,6 +191,9 @@ function m.onAsyncSet(rt, callback)
     end
     if type(callback) ~= 'function' then
         error('第2个参数不是function!')
+    end
+    if interface.type then
+        error('不能给共享类型的remotetable设置单独的方法')
     end
     interface.onSet = promiseSet(callback)
 end
