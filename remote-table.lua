@@ -88,7 +88,8 @@ function mt:__index(key)
     if not method then
         error('没有设置远程读接口!')
     end
-    local value = method(key)
+    local ext = InterfaceMap[self].ext
+    local value = method(key, ext)
     if cache[key] ~= nil then
         return cache[key]
     end
@@ -102,7 +103,8 @@ function mt:__newindex(key, value)
     if not method then
         error('没有设置远程写接口!')
     end
-    method(key, value)
+    local ext = InterfaceMap[self].ext
+    method(key, value, ext)
     cache[key] = value
 end
 
@@ -112,11 +114,13 @@ local m = {}
 ---如果没有设置 `tp` 参数，那么你需要给这个表单独设置读写接口
 ---如果设置了 `tp` 参数，那么他会使用该类的读写接口
 ---@param  tp? any # 使用同一个 tp 的表会使用同样的接口。
+---@param  ext? any # 额外参数，在调用类型接口时传入，方便类型接口区分是哪个对象
 ---@return remotetable
-function m.create(tp)
+function m.create(tp, ext)
     local rt = setmetatable({}, mt)
     InterfaceMap[rt] = {
         type  = tp,
+        ext   = ext,
         cache = {},
         onSet = nil,
         onGet = nil,
@@ -126,7 +130,7 @@ end
 
 ---设置远程的读接口
 ---@param rt       remotetable
----@param callback fun(key: any): any
+---@param callback fun(key: any, ext: any): any
 function m.onGet(rt, callback)
     local interface = InterfaceMap[rt]
     if not interface then
@@ -143,7 +147,7 @@ end
 
 ---设置远程的写接口
 ---@param rt       remotetable
----@param callback fun(key: any, value: any)
+---@param callback fun(key: any, value: any, ext: any): any
 function m.onSet(rt, callback)
     local interface = InterfaceMap[rt]
     if not interface then
@@ -163,7 +167,7 @@ end
 ---回调函数必须返回一个token，
 ---之后通过 m.resume 方法来延续
 ---@param rt       remotetable
----@param callback fun(key: any): any
+---@param callback fun(key: any, ext: any): any
 function m.onAsyncGet(rt, callback)
     local interface = InterfaceMap[rt]
     if not interface then
@@ -183,7 +187,7 @@ end
 ---回调函数必须返回一个token，
 ---之后通过 m.resume 方法来延续
 ---@param rt       remotetable
----@param callback fun(key: any, value: any): any
+---@param callback fun(key: any, value: any, ext: any): any
 function m.onAsyncSet(rt, callback)
     local interface = InterfaceMap[rt]
     if not interface then
@@ -200,7 +204,7 @@ end
 
 ---设置类的远程读接口
 ---@param tp       any
----@param callback fun(key: any): any
+---@param callback fun(key: any, ext: any): any
 function m.onTypeGet(tp, callback)
     local typeInterface = getTypeMap(tp)
     if type(callback) ~= 'function' then
@@ -211,7 +215,7 @@ end
 
 ---设置类的远程写接口
 ---@param tp       any
----@param callback fun(key: any, value: any)
+---@param callback fun(key: any, value: any, ext: any): any
 function m.onTypeSet(tp, callback)
     local interface = getTypeMap(tp)
     if type(callback) ~= 'function' then
@@ -225,7 +229,7 @@ end
 ---回调函数必须返回一个token，
 ---之后通过 m.resume 方法来延续
 ---@param tp       any
----@param callback fun(key: any): any
+---@param callback fun(key: any, ext: any): any
 function m.onAsyncTypeGet(tp, callback)
     local typeInterface = getTypeMap(tp)
     if type(callback) ~= 'function' then
@@ -239,7 +243,7 @@ end
 ---回调函数必须返回一个token，
 ---之后通过 m.resume 方法来延续
 ---@param tp       any
----@param callback fun(key: any, value: any): any
+---@param callback fun(key: any, value: any, ext: any): any
 function m.onAsyncTypeSet(tp, callback)
     local interface = getTypeMap(tp)
     if type(callback) ~= 'function' then
