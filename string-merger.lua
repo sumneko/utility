@@ -85,7 +85,8 @@ function m.getOffset(info, offset)
         return offset
     end
     if offset <= diff.finish then
-        return diff.cstart
+        local soff = offset - diff.start
+        return math.min(diff.cstart + soff, diff.cfinish)
     end
     return offset - diff.finish + diff.cfinish
 end
@@ -100,7 +101,8 @@ function m.getOffsetBack(info, offset)
         return offset
     end
     if offset <= diff.cfinish then
-        return diff.start
+        local soff = offset - diff.cstart
+        return math.min(diff.start + soff, diff.finish)
     end
     return offset - diff.cfinish + diff.finish
 end
