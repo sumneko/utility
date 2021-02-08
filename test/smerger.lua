@@ -19,29 +19,41 @@ local result, info = sm.mergeDiff('aaabbbccc', {
 })
 assert(result == '123987b456ccc')
 
-assert(sm.getOffset(info, 1) == 4)
-assert(sm.getOffset(info, 2) == 5)
-assert(sm.getOffset(info, 3) == 6)
-assert(sm.getOffset(info, 4) == 6)
-assert(sm.getOffset(info, 5) == 7)
-assert(sm.getOffset(info, 6) == 8)
-assert(sm.getOffset(info, 7) == 11)
-assert(sm.getOffset(info, 8) == 12)
-assert(sm.getOffset(info, 9) == 13)
+local function check(offset, start, finish)
+    local resStart, resFinish = sm.getOffset(info, offset)
+    assert(resStart  == start)
+    assert(resFinish == finish)
+end
 
-assert(sm.getOffsetBack(info, 1) == 0)
-assert(sm.getOffsetBack(info, 2) == 0)
-assert(sm.getOffsetBack(info, 3) == 0)
-assert(sm.getOffsetBack(info, 4) == 1)
-assert(sm.getOffsetBack(info, 5) == 2)
-assert(sm.getOffsetBack(info, 6) == 3)
-assert(sm.getOffsetBack(info, 7) == 5)
-assert(sm.getOffsetBack(info, 8) == 6)
-assert(sm.getOffsetBack(info, 9) == 6)
-assert(sm.getOffsetBack(info, 10) == 6)
-assert(sm.getOffsetBack(info, 11) == 7)
-assert(sm.getOffsetBack(info, 12) == 8)
-assert(sm.getOffsetBack(info, 13) == 9)
+local function checkBack(offset, start, finish)
+    local resStart, resFinish = sm.getOffsetBack(info, offset)
+    assert(resStart  == start)
+    assert(resFinish == finish)
+end
+
+check(1, 4, 4)
+check(2, 5, 5)
+check(3, 6, 6)
+check(4, 6, 6)
+check(5, 7, 7)
+check(6, 8, 10)
+check(7, 11, 11)
+check(8, 12, 12)
+check(9, 13, 13)
+
+checkBack(1, 0, 0)
+checkBack(2, 0, 0)
+checkBack(3, 0, 0)
+checkBack(4, 1, 1)
+checkBack(5, 2, 2)
+checkBack(6, 3, 4)
+checkBack(7, 5, 5)
+checkBack(8, 6, 6)
+checkBack(9, 6, 6)
+checkBack(10, 6, 6)
+checkBack(11, 7, 7)
+checkBack(12, 8, 8)
+checkBack(13, 9, 9)
 
 result, info = sm.mergeDiff('aaa.bbbbb', {
     {
@@ -50,16 +62,16 @@ result, info = sm.mergeDiff('aaa.bbbbb', {
         text   = 'ccc'
     },
 })
-assert(sm.getOffset(info, 5) == 5)
-assert(sm.getOffset(info, 6) == 6)
-assert(sm.getOffset(info, 7) == 7)
-assert(sm.getOffset(info, 8) == 7)
-assert(sm.getOffset(info, 9) == 7)
 
+check(5, 5, 5)
+check(6, 6, 6)
+check(7, 7, 7)
+check(8, 7, 7)
+check(9, 7, 7)
 
-assert(sm.getOffsetBack(info, 5) == 5)
-assert(sm.getOffsetBack(info, 6) == 6)
-assert(sm.getOffsetBack(info, 7) == 7)
+checkBack(5, 5, 5)
+checkBack(6, 6, 6)
+checkBack(7, 7, 9)
 
 result, info = sm.mergeDiff('aaa.bbb', {
     {
@@ -68,16 +80,16 @@ result, info = sm.mergeDiff('aaa.bbb', {
         text   = 'ccccc'
     },
 })
-assert(sm.getOffset(info, 5) == 5)
-assert(sm.getOffset(info, 6) == 6)
-assert(sm.getOffset(info, 7) == 7)
 
+check(5, 5, 5)
+check(6, 6, 6)
+check(7, 7, 9)
 
-assert(sm.getOffsetBack(info, 5) == 5)
-assert(sm.getOffsetBack(info, 6) == 6)
-assert(sm.getOffsetBack(info, 7) == 7)
-assert(sm.getOffsetBack(info, 8) == 7)
-assert(sm.getOffsetBack(info, 9) == 7)
+checkBack(5, 5, 5)
+checkBack(6, 6, 6)
+checkBack(7, 7, 7)
+checkBack(8, 7, 7)
+checkBack(9, 7, 7)
 
 local function test1()
     local text = [[
