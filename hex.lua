@@ -40,6 +40,8 @@ function mt:decode(hex)
     local cur_size = {}
 
     buildExp = function (ct, exp, i, stack, parent)
+        local _ = tracy and tracy.ZoneBeginN 'buildExp'
+        local _ <close> = tracy and tracy.ZoneEnd
         local k, fmt, index = splitDefine(exp, i)
         local fmtDef = define[fmt]
         -- print(idx,exp,fmtDef,fmt,k)
@@ -99,6 +101,8 @@ function mt:decode(hex)
     end
 
     buildCase = function (ct, case, i, stack, ...)
+        local _ = tracy and tracy.ZoneBeginN 'buildCase'
+        local _ <close> = tracy and tracy.ZoneEnd
         local caseResult = self:_execute(case.case, function(_, key)
             local ret = ct[key] or _G[key]
             if not ret and key == '_BufferSize' then return total_size end
@@ -111,6 +115,8 @@ function mt:decode(hex)
     end
 
     buildChunk = function (ct, cdef, stack, ...)
+        local _ = tracy and tracy.ZoneBeginN 'buildChunk'
+        local _ <close> = tracy and tracy.ZoneEnd
         for i = 1, #cdef do
             if type(cdef)=='string' then
                 --别名

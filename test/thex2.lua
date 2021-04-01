@@ -1,6 +1,7 @@
-local hex  = require 'hex'
-local util = require 'utility'
-local fs   = require 'bee.filesystem'
+local hex    = require 'hex'
+local util   = require 'utility'
+local fs     = require 'bee.filesystem'
+local ttracy = require 'test.tracy'
 
 local mdxparser = hex.define {
     'filetype:c4', -- 4
@@ -371,58 +372,23 @@ local mdxparser = hex.define {
 
 }
 
-local function enableTracy()
-    require 'luatracy'
-
-    util.enableCloseFunction()
-
-    local function getGlobal(name)
-        local g = _G
-        for n in name:gmatch '[^%.]+' do
-            g = g[n]
-        end
-        return g
-    end
-
-    local function setGlobal(name, v)
-        local g = _G
-        local l = {}
-        for n in name:gmatch '[^%.]+' do
-            l[#l+1] = n
-        end
-        for i = 1, #l - 1 do
-            g = g[l[i]]
-        end
-        g[l[#l]] = v
-    end
-
-    for _, name in ipairs {
-        'setmetatable',
-        'load',
-        'assert',
-        'string.pack',
-        'string.unpack',
-        'string.packsize',
-        'string.rep',
-    } do
-
-        local origin = getGlobal(name)
-        setGlobal(name, function (...)
-            tracy.ZoneBeginN(name)
-            local a, b, c, d, e, f = origin(...)
-            tracy.ZoneEnd()
-            return a, b, c, d, e, f
-        end)
-    end
-end
-
-enableTracy()
+ttracy.start {
+    'setmetatable',
+    'load',
+    'assert',
+    'string.pack',
+    'string.unpack',
+    'string.packsize',
+    'string.rep',
+}
 
 local mdx = util.loadFile('test/input/mz.mdx')
 print('decode #1', os.clock())
 local t = mdxparser:decode(mdx)
 print('decode #2', os.clock())
 fs.create_directories(fs.path 'test/output')
+
+ttracy.stop()
 
 local mzLua = util.dump(t)
 util.saveFile('test/output/mz.lua', mzLua)
