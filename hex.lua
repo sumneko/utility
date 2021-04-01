@@ -1,14 +1,12 @@
-local type            = type
-local setmetatable    = setmetatable
-local load            = load
-local assert          = assert
-local error           = error
-local stringSub       = string.sub
-local stringMatch     = string.match
-local stringFind      = string.find
-local stringUnpack    = string.unpack
-local debugGetUpValue = debug.getupvalue
-local debugSetUpValue = debug.setupvalue
+local type         = type
+local setmetatable = setmetatable
+local load         = load
+local assert       = assert
+local error        = error
+local stringSub    = string.sub
+local stringMatch  = string.match
+local stringFind   = string.find
+local stringUnpack = string.unpack
 
 local m = {}
 
@@ -32,19 +30,11 @@ end
 local function execute(self, code, index)
     local cache = self._cache[code]
     if cache then
-        if cache.env and cache.env ~= index then
-            debugSetUpValue(cache.func, 1, index)
-        end
+        cache.mt.__index = index
     else
         cache = {}
-        local f, err = load('return ' .. code, code, 't', index)
-        if not f then
-            error(err)
-        end
-        cache.func = f
-        if debugGetUpValue(f, 1) == '_ENV' then
-            cache.env = index
-        end
+        cache.mt   = { __index = index }
+        cache.func = assert(load('return ' .. code, code, 't', setmetatable({}, cache.mt)))
         self._cache[code] = cache
     end
     local res = cache.func()
