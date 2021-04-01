@@ -11,9 +11,9 @@ local function splitDefine(def, i)
         index = fmt:sub(a + 1, b - 1)
         fmt = fmt:sub(1, a - 1)
     end
-	if k == nil or k:len() == 0 or k == "" then
-		k = i
-	end
+    if k == nil or k:len() == 0 or k == "" then
+        k = i
+    end
     return k, fmt, index
 end
 
@@ -23,7 +23,7 @@ function mt:decode(hex)
     local root = {}
     local buildExp, buildChunk, buildCase
 
-	local map = {}
+    local map = {}
 
     buildExp = function (ct, exp, i, stack)
         local k, fmt, index = splitDefine(exp, i)
@@ -48,11 +48,11 @@ function mt:decode(hex)
     buildCase = function (ct, case, i, stack)
         local env = setmetatable({}, { __index = function (_, k)
             for a = stack, 0, -1 do
-				local v = map[a][k]
-				if v then
-					return v
-				end
-			end
+                local v = map[a][k]
+                if v then
+                    return v
+                end
+            end
         end })
         local caseBuf = 'return ' .. case.case
         local caseF = assert(load(caseBuf, caseBuf, 't', env))
@@ -62,7 +62,7 @@ function mt:decode(hex)
     end
 
     buildChunk = function (ct, cdef, stack)
-		map[stack] = ct
+        map[stack] = ct
         for i = 1, #cdef do
             if type(cdef[i]) == 'string' then
                 buildExp(ct, cdef[i], i, stack + 1)
@@ -81,9 +81,9 @@ end
 function mt:encode(data)
     local define = self._define
     local buf = {}
-    local buildChunk, buildExp
+    local buildChunk, buildExp, buildCase
 
-	local map = {}
+    local map = {}
 
     buildExp = function (ct, exp, i, stack)
         local k, fmt, index = splitDefine(exp, i)
@@ -112,14 +112,14 @@ function mt:encode(data)
         end
     end
 
-	buildCase = function (ct, case, i, stack)
+    buildCase = function (ct, case, i, stack)
         local env = setmetatable({}, { __index = function (_, k)
-			for a = stack, 0, -1 do
-				local v = map[a][k]
-				if v then
-					return v
-				end
-			end
+            for a = stack, 0, -1 do
+                local v = map[a][k]
+                if v then
+                    return v
+                end
+            end
         end })
         local caseBuf = 'return ' .. case.case
         local caseF = assert(load(caseBuf, caseBuf, 't', env))
@@ -129,7 +129,7 @@ function mt:encode(data)
     end
 
     buildChunk = function (ct, cdef, stack)
-		map[stack] = ct
+        map[stack] = ct
         for i = 1, #cdef do
             if type(cdef[i]) == 'string' then
                 buildExp(ct, cdef[i], i, stack + 1)
