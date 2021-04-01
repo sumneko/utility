@@ -35,7 +35,7 @@ function mt:decode(hex)
             if index then
                 local cal = index:match('^%??(.*)')
                 if cal then
-                    cal = load('return '..cal,index,'t',setmetatable({},{__index=function(_,key)
+                    cal = load('return ' .. cal, index, 't', setmetatable({}, {__index = function(_, key)
                         local ret = ct[key] or _G[key]
                         if not ret and key == '_BufferSize' then return total_size end
                         return ret
@@ -47,13 +47,13 @@ function mt:decode(hex)
                 else
                     error('格式错误:'..index)
                 end
-                ct[k] = setmetatable({},{__index = ct})
+                ct[k] = setmetatable({}, {__index = ct})
                 if index:match('^%?') then
                     --cal是size
                     cur_size[stack] = cal
                     local idx = 1
                     while cur_size[stack]>0 do
-                        ct[k][idx] = setmetatable({},{__index = ct[k]})
+                        ct[k][idx] = setmetatable({}, {__index = ct[k]})
                         buildChunk(ct[k][idx], fmtDef, stack,ct)
                         idx = idx + 1
                     end
@@ -62,7 +62,7 @@ function mt:decode(hex)
                 else
                     if type(fmtDef) == 'table' then
                         for x = 1, cal do
-                            ct[k][x] = setmetatable({},{__index = ct[k]})
+                            ct[k][x] = setmetatable({}, {__index = ct[k]})
                             buildChunk(ct[k][x], fmtDef, stack,ct)
                         end
                     else
@@ -73,7 +73,7 @@ function mt:decode(hex)
                     end
                 end
             else
-                ct[k] = setmetatable({},{__index = ct})
+                ct[k] = setmetatable({}, {__index = ct})
                 buildChunk(ct[k], fmtDef, stack,ct)
             end
         else
@@ -89,7 +89,7 @@ function mt:decode(hex)
     end
 
     buildCase = function (ct, case, i, stack,...)
-        local env = setmetatable({},{__index=function(_,key)
+        local env = setmetatable({}, {__index = function(_,key)
             local ret = ct[key] or _G[key]
             if not ret and key == '_BufferSize' then return total_size end
             return ret

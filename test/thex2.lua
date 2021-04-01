@@ -371,9 +371,30 @@ local mdxparser = hex.define {
 
 }
 
+require 'luatracy'
+
+util.enableCloseFunction()
+
+for _, name in ipairs {
+    'setmetatable',
+    'load',
+    'assert',
+} do
+    local origin = _G[name]
+    _G[name] = function (...)
+        tracy.ZoneBeginN(name)
+        local a, b, c, d, e, f = origin(...)
+        tracy.ZoneEnd()
+        return a, b, c, d, e, f
+    end
+end
+
 local mdx = util.loadFile('test/input/mz.mdx')
 print('decode #1', os.clock())
 local t = mdxparser:decode(mdx)
 print('decode #2', os.clock())
 fs.create_directories(fs.path 'test/output')
-util.saveFile('test/output/mz.lua', util.dump(t))
+
+local mzLua = util.dump(t)
+util.saveFile('test/output/mz.lua', mzLua)
+assert(mzLua == util.loadFile('test/input/mz.lua'))
