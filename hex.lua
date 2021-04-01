@@ -13,29 +13,35 @@ local m = {}
 local mt = {}
 mt.__index = mt
 
-local function splitDefine(def, i)
-    local k, fmt = stringMatch(def, '^(.-)%:(.+)$')
-    local index
-    local a, b = stringFind(fmt,'%[.-%]')
-    if a then
-        index = stringSub(fmt, a + 1, b - 1)
-        fmt = stringSub(fmt, 1, a - 1)
+local function splitDefine(self, def, i)
+    local cache = self._splitCache[def]
+    if not cache then
+        local k, fmt = stringMatch(def, '^(.-)%:(.+)$')
+        local index
+        local a, b = stringFind(fmt,'%[.-%]')
+        if a then
+            index = stringSub(fmt, a + 1, b - 1)
+            fmt = stringSub(fmt, 1, a - 1)
+        end
+        cache = {k, fmt, index}
+        self._splitCache[def] = cache
     end
-    if k == nil or #k == 0 then
+    local k, fmt, index = cache[1], cache[2], cache[3]
+    if k == '' then
         k = i
     end
     return k, fmt, index
 end
 
 local function execute(self, code, index)
-    local cache = self._cache[code]
+    local cache = self._loadCache[code]
     if cache then
         cache.mt.__index = index
     else
         cache = {}
         cache.mt   = { __index = index }
         cache.func = assert(load('return ' .. code, code, 't', setmetatable({}, cache.mt)))
-        self._cache[code] = cache
+        self._loadCache[code] = cache
     end
     local res = cache.func()
     return res
@@ -53,7 +59,7 @@ function mt:decode(hex)
     local curSize = {}
 
     buildExp = function (ct, exp, i, stack)
-        local k, fmt, index = splitDefine(exp, i)
+        local k, fmt, index = splitDefine(self, exp, i)
         local fmtDef = define[fmt]
         -- print(idx,exp,fmtDef,fmt,k)
         fmt = define[fmt] or fmt
@@ -150,7 +156,7 @@ function mt:encode(data)
     local map = {}
 
     buildExp = function (ct, exp, i, stack)
-        local k, fmt, index = splitDefine(exp, i)
+        local k, fmt, index = splitDefine(self, exp, i)
         local fmtDef = define[fmt]
         if fmtDef then
             if index then
@@ -219,10 +225,11 @@ end
 
 function m.define(t)
     return setmetatable({
-        _define = t,
-        _encode = nil,
-        _decode = nil,
-        _cache  = {},
+        _define     = t,
+        _encode     = nil,
+        _decode     = nil,
+        _loadCache  = {},
+        _splitCache = {},
     }, mt)
 end
 
