@@ -1,4 +1,8 @@
-local type = type
+local type         = type
+local setmetatable = setmetatable
+local load         = load
+local assert       = assert
+local error        = error
 
 local m = {}
 
@@ -34,10 +38,12 @@ local function execute(self, code, index)
 end
 
 function mt:decode(hex)
-    local total_size = #hex
     local define = self._define
     local idx = 1
-    local root = {}
+    local root = {
+        _BufferSize = #hex,
+    }
+    setmetatable(root, { __index = _G })
     local buildExp, buildChunk, buildCase
 
     local cur_size = {}
@@ -51,23 +57,19 @@ function mt:decode(hex)
             if index then
                 local cal = index:match('^%??(.*)')
                 if cal then
-                    cal = execute(self, cal, function(_, key)
-                        local ret = ct[key] or _G[key]
-                        if not ret and key == '_BufferSize' then return total_size end
-                        return ret
-                    end)
+                    cal = execute(self, cal, ct)
                 else
                     error('格式错误:' .. index)
                 end
-                ct[k] = setmetatable({}, { __index = ct })
-                local childMT = { __index = ct[k] }
+                ct[k] = setmetatable({}, ct)
+                ct[k].__index = ct[k]
                 if index:sub(1, 1) == '?' then
                     --cal是size
                     cur_size[stack] = cal
                     local idx2 = 1
                     while cur_size[stack] > 0 do
-                        ct[k][idx2] = setmetatable({}, childMT)
-                        buildChunk(ct[k][idx2], fmtDef, stack, ct)
+                        ct[k][idx2] = setmetatable({}, ct[k])
+                        buildChunk(ct[k][idx2], fmtDef, stack)
                         idx2 = idx2 + 1
                     end
                     --assert(cur_size[stack] == 0, cur_size[stack] .. '块大小不符合:' .. index)
@@ -75,8 +77,8 @@ function mt:decode(hex)
                 else
                     if type(fmtDef) == 'table' then
                         for x = 1, cal do
-                            ct[k][x] = setmetatable({}, childMT)
-                            buildChunk(ct[k][x], fmtDef, stack, ct)
+                            ct[k][x] = setmetatable({}, ct[k])
+                            buildChunk(ct[k][x], fmtDef, stack)
                         end
                     else
                         --别名(支持数组)
@@ -85,9 +87,10 @@ function mt:decode(hex)
                         end
                     end
                 end
+                ct[k].__index = nil
             else
-                ct[k] = setmetatable({}, { __index = ct })
-                buildChunk(ct[k], fmtDef, stack, ct)
+                ct[k] = setmetatable({}, ct)
+                buildChunk(ct[k], fmtDef, stack)
             end
         else
             local curidx = idx
@@ -102,11 +105,7 @@ function mt:decode(hex)
     end
 
     buildCase = function (ct, case, i, stack)
-        local caseResult = execute(self, case.case, function(_, key)
-            local ret = ct[key] or _G[key]
-            if not ret and key == '_BufferSize' then ret = total_size end
-            return ret
-        end)
+        local caseResult = execute(self, case.case, ct)
         if caseResult then
             -- print(case.case..':true')
             buildExp(ct, case.exp, i, stack)
@@ -114,6 +113,7 @@ function mt:decode(hex)
     end
 
     buildChunk = function (ct, cdef, stack)
+        ct.__index = ct
         if type(cdef) == 'string' then
             --别名
             buildExp(ct, cdef, 1, stack + 1)
@@ -128,9 +128,12 @@ function mt:decode(hex)
             end
         end
         ct[''] = nil
+        ct.__index = nil
     end
 
     buildChunk(root, define, 0)
+
+    root._BufferSize = nil
 
     return root
 end
