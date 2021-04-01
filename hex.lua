@@ -39,7 +39,7 @@ function mt:decode(hex)
 
     local cur_size = {}
 
-    buildExp = function (ct, exp, i, stack,parent)
+    buildExp = function (ct, exp, i, stack, parent)
         local k, fmt, index = splitDefine(exp, i)
         local fmtDef = define[fmt]
         -- print(idx,exp,fmtDef,fmt,k)
@@ -54,30 +54,31 @@ function mt:decode(hex)
                         return ret
                     end)
                 else
-                    error('格式错误:'..index)
+                    error('格式错误:' .. index)
                 end
                 ct[k] = setmetatable({}, { __index = ct })
-                if index:match('^%?') then
+                local childMT = { __index = ct[k] }
+                if index:sub(1, 1) == '?' then
                     --cal是size
                     cur_size[stack] = cal
                     local idx2 = 1
-                    while cur_size[stack]>0 do
-                        ct[k][idx2] = setmetatable({}, { __index = ct[k] })
+                    while cur_size[stack] > 0 do
+                        ct[k][idx2] = setmetatable({}, childMT)
                         buildChunk(ct[k][idx2], fmtDef, stack,ct)
                         idx2 = idx2 + 1
                     end
-                    assert(cur_size[stack]==0,cur_size[stack]..'块大小不符合:'..index)
+                    assert(cur_size[stack] == 0, cur_size[stack] .. '块大小不符合:' .. index)
                     cur_size[stack] = nil
                 else
                     if type(fmtDef) == 'table' then
                         for x = 1, cal do
-                            ct[k][x] = setmetatable({}, { __index = ct[k] })
+                            ct[k][x] = setmetatable({}, childMT)
                             buildChunk(ct[k][x], fmtDef, stack, ct)
                         end
                     else
                         --别名(支持数组)
                         for x = 1, cal do
-                            buildExp(ct[k],fmtDef,x,ct)
+                            buildExp(ct[k], fmtDef, x, ct)
                         end
                     end
                 end
@@ -97,7 +98,7 @@ function mt:decode(hex)
         end
     end
 
-    buildCase = function (ct, case, i, stack,...)
+    buildCase = function (ct, case, i, stack, ...)
         local caseResult = self:_execute(case.case, function(_, key)
             local ret = ct[key] or _G[key]
             if not ret and key == '_BufferSize' then return total_size end
@@ -105,7 +106,7 @@ function mt:decode(hex)
         end)
         if caseResult then
             -- print(case.case..':true')
-            buildExp(ct, case.exp, i, stack,...)
+            buildExp(ct, case.exp, i, stack, ...)
         end
     end
 
