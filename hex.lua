@@ -1,3 +1,5 @@
+local type = type
+
 local m = {}
 
 local mt = {}
@@ -17,7 +19,7 @@ local function splitDefine(def, i)
     return k, fmt, index
 end
 
-function mt:_execute(code, index)
+local function execute(self, code, index)
     local cache = self._cache[code]
     if cache then
         cache.mt.__index = index
@@ -27,7 +29,8 @@ function mt:_execute(code, index)
         cache.func = assert(load('return ' .. code, code, 't', setmetatable({}, cache.mt)))
         self._cache[code] = cache
     end
-    return cache.func()
+    local res = cache.func()
+    return res
 end
 
 function mt:decode(hex)
@@ -39,9 +42,7 @@ function mt:decode(hex)
 
     local cur_size = {}
 
-    buildExp = function (ct, exp, i, stack, parent)
-        local _ = tracy and tracy.ZoneBeginN 'buildExp'
-        local _ <close> = tracy and tracy.ZoneEnd
+    buildExp = function (ct, exp, i, stack)
         local k, fmt, index = splitDefine(exp, i)
         local fmtDef = define[fmt]
         -- print(idx,exp,fmtDef,fmt,k)
@@ -50,7 +51,7 @@ function mt:decode(hex)
             if index then
                 local cal = index:match('^%??(.*)')
                 if cal then
-                    cal = self:_execute(cal, function(_, key)
+                    cal = execute(self, cal, function(_, key)
                         local ret = ct[key] or _G[key]
                         if not ret and key == '_BufferSize' then return total_size end
                         return ret
@@ -66,10 +67,10 @@ function mt:decode(hex)
                     local idx2 = 1
                     while cur_size[stack] > 0 do
                         ct[k][idx2] = setmetatable({}, childMT)
-                        buildChunk(ct[k][idx2], fmtDef, stack,ct)
+                        buildChunk(ct[k][idx2], fmtDef, stack, ct)
                         idx2 = idx2 + 1
                     end
-                    assert(cur_size[stack] == 0, cur_size[stack] .. '块大小不符合:' .. index)
+                    --assert(cur_size[stack] == 0, cur_size[stack] .. '块大小不符合:' .. index)
                     cur_size[stack] = nil
                 else
                     if type(fmtDef) == 'table' then
@@ -100,32 +101,30 @@ function mt:decode(hex)
         end
     end
 
-    buildCase = function (ct, case, i, stack, ...)
-        local _ = tracy and tracy.ZoneBeginN 'buildCase'
-        local _ <close> = tracy and tracy.ZoneEnd
-        local caseResult = self:_execute(case.case, function(_, key)
+    buildCase = function (ct, case, i, stack)
+        local caseResult = execute(self, case.case, function(_, key)
             local ret = ct[key] or _G[key]
-            if not ret and key == '_BufferSize' then return total_size end
+            if not ret and key == '_BufferSize' then ret = total_size end
             return ret
         end)
         if caseResult then
             -- print(case.case..':true')
-            buildExp(ct, case.exp, i, stack, ...)
+            buildExp(ct, case.exp, i, stack)
         end
     end
 
-    buildChunk = function (ct, cdef, stack, ...)
-        local _ = tracy and tracy.ZoneBeginN 'buildChunk'
-        local _ <close> = tracy and tracy.ZoneEnd
-        for i = 1, #cdef do
-            if type(cdef)=='string' then
-                --别名
-                buildExp(ct, cdef, i, stack + 1, ...)
-                break
-            elseif type(cdef[i]) == 'string' then
-                buildExp(ct, cdef[i], i, stack + 1, ...)
-            elseif cdef[i].type == 'case' then
-                buildCase(ct, cdef[i], i, stack + 1, ...)
+    buildChunk = function (ct, cdef, stack)
+        if type(cdef) == 'string' then
+            --别名
+            buildExp(ct, cdef, 1, stack + 1)
+        else
+            for i = 1, #cdef do
+                local child = cdef[i]
+                if type(child) == 'string' then
+                    buildExp(ct, child, i, stack + 1)
+                elseif child.type == 'case' then
+                    buildCase(ct, child, i, stack + 1)
+                end
             end
         end
         ct[''] = nil
@@ -171,7 +170,7 @@ function mt:encode(data)
     end
 
     buildCase = function (ct, case, i, stack)
-        local caseResult = self:_execute(case.case, function (_, k)
+        local caseResult = execute(self, case.case, function (_, k)
             for a = stack, 0, -1 do
                 if map[a] then
                     local v = map[a][k]

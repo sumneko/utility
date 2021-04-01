@@ -372,15 +372,15 @@ local mdxparser = hex.define {
 
 }
 
-ttracy.start {
-    'setmetatable',
-    'load',
-    'assert',
-    'string.pack',
-    'string.unpack',
-    'string.packsize',
-    'string.rep',
-}
+--ttracy.start {
+--    'setmetatable',
+--    'load',
+--    'assert',
+--    'string.pack',
+--    'string.unpack',
+--    'string.packsize',
+--    'string.rep',
+--}
 
 local mdx = util.loadFile('test/input/mz.mdx')
 print('decode #1', os.clock())
@@ -388,7 +388,7 @@ local t = mdxparser:decode(mdx)
 print('decode #2', os.clock())
 fs.create_directories(fs.path 'test/output')
 
-ttracy.stop()
+--ttracy.stop()
 
 local mzLua = util.dump(t)
 util.saveFile('test/output/mz.lua', mzLua)
