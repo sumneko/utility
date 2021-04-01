@@ -3,6 +3,10 @@ local setmetatable = setmetatable
 local load         = load
 local assert       = assert
 local error        = error
+local stringSub    = string.sub
+local stringMatch  = string.match
+local stringFind   = string.find
+local stringUnpack = string.unpack
 
 local m = {}
 
@@ -10,14 +14,14 @@ local mt = {}
 mt.__index = mt
 
 local function splitDefine(def, i)
-    local k, fmt = def:match '^(.-)%:(.+)$'
+    local k, fmt = stringMatch(def, '^(.-)%:(.+)$')
     local index
-    local a, b = fmt:find '%[.-%]'
+    local a, b = stringFind(fmt,'%[.-%]')
     if a then
-        index = fmt:sub(a + 1, b - 1)
-        fmt = fmt:sub(1, a - 1)
+        index = stringSub(fmt, a + 1, b - 1)
+        fmt = stringSub(fmt, 1, a - 1)
     end
-    if k == nil or k:len() == 0 or k == "" then
+    if k == nil or #k == 0 then
         k = i
     end
     return k, fmt, index
@@ -46,7 +50,7 @@ function mt:decode(hex)
     setmetatable(root, { __index = _G })
     local buildExp, buildChunk, buildCase
 
-    local cur_size = {}
+    local curSize = {}
 
     buildExp = function (ct, exp, i, stack)
         local k, fmt, index = splitDefine(exp, i)
@@ -55,7 +59,7 @@ function mt:decode(hex)
         fmt = define[fmt] or fmt
         if fmtDef then
             if index then
-                local cal = index:match('^%??(.*)')
+                local cal = stringMatch(index, '^%??(.*)')
                 if cal then
                     cal = execute(self, cal, ct)
                 else
@@ -63,17 +67,17 @@ function mt:decode(hex)
                 end
                 ct[k] = setmetatable({}, ct)
                 ct[k].__index = ct[k]
-                if index:sub(1, 1) == '?' then
+                if stringSub(index, 1, 1) == '?' then
                     --cal是size
-                    cur_size[stack] = cal
+                    curSize[stack] = cal
                     local idx2 = 1
-                    while cur_size[stack] > 0 do
+                    while curSize[stack] > 0 do
                         ct[k][idx2] = setmetatable({}, ct[k])
                         buildChunk(ct[k][idx2], fmtDef, stack)
                         idx2 = idx2 + 1
                     end
                     --assert(cur_size[stack] == 0, cur_size[stack] .. '块大小不符合:' .. index)
-                    cur_size[stack] = nil
+                    curSize[stack] = nil
                 else
                     if type(fmtDef) == 'table' then
                         for x = 1, cal do
@@ -94,11 +98,11 @@ function mt:decode(hex)
             end
         else
             local curidx = idx
-            ct[k], idx = fmt:unpack(hex, idx)
+            ct[k], idx = stringUnpack(fmt, hex, idx)
             -- print(ct[k])
             local size = idx - curidx
-            for key, value in pairs(cur_size) do
-                cur_size[key] = value - size
+            for key, value in next, curSize do
+                curSize[key] = value - size
                 -- print('size',key,cur_size[key])
             end
         end
