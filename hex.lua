@@ -56,23 +56,23 @@ function mt:decode(hex)
                 else
                     error('格式错误:'..index)
                 end
-                ct[k] = setmetatable({}, {__index = ct})
+                ct[k] = setmetatable({}, { __index = ct })
                 if index:match('^%?') then
                     --cal是size
                     cur_size[stack] = cal
-                    local idx = 1
+                    local idx2 = 1
                     while cur_size[stack]>0 do
-                        ct[k][idx] = setmetatable({}, {__index = ct[k]})
-                        buildChunk(ct[k][idx], fmtDef, stack,ct)
-                        idx = idx + 1
+                        ct[k][idx2] = setmetatable({}, { __index = ct[k] })
+                        buildChunk(ct[k][idx2], fmtDef, stack,ct)
+                        idx2 = idx2 + 1
                     end
                     assert(cur_size[stack]==0,cur_size[stack]..'块大小不符合:'..index)
                     cur_size[stack] = nil
                 else
                     if type(fmtDef) == 'table' then
                         for x = 1, cal do
-                            ct[k][x] = setmetatable({}, {__index = ct[k]})
-                            buildChunk(ct[k][x], fmtDef, stack,ct)
+                            ct[k][x] = setmetatable({}, { __index = ct[k] })
+                            buildChunk(ct[k][x], fmtDef, stack, ct)
                         end
                     else
                         --别名(支持数组)
@@ -82,8 +82,8 @@ function mt:decode(hex)
                     end
                 end
             else
-                ct[k] = setmetatable({}, {__index = ct})
-                buildChunk(ct[k], fmtDef, stack,ct)
+                ct[k] = setmetatable({}, { __index = ct })
+                buildChunk(ct[k], fmtDef, stack, ct)
             end
         else
             local curidx = idx
@@ -109,16 +109,16 @@ function mt:decode(hex)
         end
     end
 
-    buildChunk = function (ct, cdef, stack,...)
+    buildChunk = function (ct, cdef, stack, ...)
         for i = 1, #cdef do
             if type(cdef)=='string' then
                 --别名
-                buildExp(ct, cdef, i, stack + 1,...)
+                buildExp(ct, cdef, i, stack + 1, ...)
                 break
             elseif type(cdef[i]) == 'string' then
-                buildExp(ct, cdef[i], i, stack + 1,...)
+                buildExp(ct, cdef[i], i, stack + 1, ...)
             elseif cdef[i].type == 'case' then
-                buildCase(ct, cdef[i], i, stack + 1,...)
+                buildCase(ct, cdef[i], i, stack + 1, ...)
             end
         end
         ct[''] = nil

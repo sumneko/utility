@@ -391,7 +391,7 @@ local function enableTracy()
     end
 end
 
-enableTracy()
+--enableTracy()
 
 local mdx = util.loadFile('test/input/mz.mdx')
 print('decode #1', os.clock())
