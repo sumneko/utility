@@ -17,6 +17,12 @@ local function splitDefine(def, i)
     return k, fmt, index
 end
 
+function mt:_execute(code, index)
+    local f = self._cache[code]
+    f = assert(load('return ' .. code, code, 't', setmetatable({}, { __index = index })))
+    return f()
+end
+
 function mt:decode(hex)
     local total_size = #hex
     local define = self._define
@@ -35,15 +41,11 @@ function mt:decode(hex)
             if index then
                 local cal = index:match('^%??(.*)')
                 if cal then
-                    cal = load('return ' .. cal, index, 't', setmetatable({}, {__index = function(_, key)
+                    cal = self:_execute(cal, function(_, key)
                         local ret = ct[key] or _G[key]
                         if not ret and key == '_BufferSize' then return total_size end
                         return ret
-                    end}))
-                    if cal then
-                        cal = cal()
-                        -- print('计算',cal)
-                    end
+                    end)
                 else
                     error('格式错误:'..index)
                 end
@@ -89,14 +91,12 @@ function mt:decode(hex)
     end
 
     buildCase = function (ct, case, i, stack,...)
-        local env = setmetatable({}, {__index = function(_,key)
+        local caseResult = self:_execute(case.case, function(_, key)
             local ret = ct[key] or _G[key]
             if not ret and key == '_BufferSize' then return total_size end
             return ret
-        end})
-        local caseBuf = 'return ' .. case.case
-        local caseF = assert(load(caseBuf, caseBuf, 't', env))
-        if caseF() then
+        end)
+        if caseResult then
             -- print(case.case..':true')
             buildExp(ct, case.exp, i, stack,...)
         end
@@ -157,7 +157,7 @@ function mt:encode(data)
     end
 
     buildCase = function (ct, case, i, stack)
-        local env = setmetatable({}, { __index = function (_, k)
+        local caseResult = self:_execute(case.case, function (_, k)
             for a = stack, 0, -1 do
                 if map[a] then
                     local v = map[a][k]
@@ -166,10 +166,8 @@ function mt:encode(data)
                     end
                 end
             end
-        end })
-        local caseBuf = 'return ' .. case.case
-        local caseF = assert(load(caseBuf, caseBuf, 't', env))
-        if caseF() then
+        end)
+        if caseResult then
             buildExp(ct, case.exp, i, stack)
         end
     end
@@ -204,6 +202,7 @@ function m.define(t)
         _define = t,
         _encode = nil,
         _decode = nil,
+        _cache  = {},
     }, mt)
 end
 

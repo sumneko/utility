@@ -5,3 +5,5 @@ dofile 'test/thex.lua'
 dofile 'test/smerger.lua'
 dofile 'test/rtable.lua'
 dofile 'test/thex2.lua'
+
+print('测试全部完成')
