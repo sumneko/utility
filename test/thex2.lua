@@ -371,23 +371,27 @@ local mdxparser = hex.define {
 
 }
 
-require 'luatracy'
+local function enableTracy()
+    require 'luatracy'
 
-util.enableCloseFunction()
+    util.enableCloseFunction()
 
-for _, name in ipairs {
-    'setmetatable',
-    'load',
-    'assert',
-} do
-    local origin = _G[name]
-    _G[name] = function (...)
-        tracy.ZoneBeginN(name)
-        local a, b, c, d, e, f = origin(...)
-        tracy.ZoneEnd()
-        return a, b, c, d, e, f
+    for _, name in ipairs {
+        'setmetatable',
+        'load',
+        'assert',
+    } do
+        local origin = _G[name]
+        _G[name] = function (...)
+            tracy.ZoneBeginN(name)
+            local a, b, c, d, e, f = origin(...)
+            tracy.ZoneEnd()
+            return a, b, c, d, e, f
+        end
     end
 end
+
+enableTracy()
 
 local mdx = util.loadFile('test/input/mz.mdx')
 print('decode #1', os.clock())

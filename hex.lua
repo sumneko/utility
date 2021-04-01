@@ -18,9 +18,16 @@ local function splitDefine(def, i)
 end
 
 function mt:_execute(code, index)
-    local f = self._cache[code]
-    f = assert(load('return ' .. code, code, 't', setmetatable({}, { __index = index })))
-    return f()
+    local cache = self._cache[code]
+    if cache then
+        cache.mt.__index = index
+    else
+        cache = {}
+        cache.mt   = { __index = index }
+        cache.func = assert(load('return ' .. code, code, 't', setmetatable({}, cache.mt)))
+        self._cache[code] = cache
+    end
+    return cache.func()
 end
 
 function mt:decode(hex)
