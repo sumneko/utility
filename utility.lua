@@ -601,4 +601,18 @@ function m.sortByScore(tbl, callbacks)
     end)
 end
 
+---裁剪字符串
+---@param str string
+---@param mode? '"left"'|'"right"'
+---@return string
+function m.trim(str, mode)
+    if mode == "left" then
+        return str:gsub('^%s+', '')
+    end
+    if mode == "right" then
+        return str:gsub('%s+$', '')
+    end
+    return str:match '^%s*(%S+)%s*$'
+end
+
 return m
