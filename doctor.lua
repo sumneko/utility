@@ -14,6 +14,7 @@ local getupvalue     = debug.getupvalue
 local getuservalue   = debug.getuservalue or debug.getfenv
 local getlocal       = debug.getlocal
 local getinfo        = debug.getinfo
+local running        = coroutine.running
 local maxinterger    = 10000
 local mathType       = math.type
 local _G             = _G
@@ -145,12 +146,15 @@ local function formatName(obj)
             return formatObject(obj, 'userdata')
         end
     else
-        return formatName(obj, tp)
+        return formatObject(obj, tp)
     end
 end
 
 local _private = {}
 local function private(o)
+    if not o then
+        return nil
+    end
     _private[o] = true
     return o
 end
@@ -341,6 +345,7 @@ m.snapshot = private(function ()
         return mark[obj]
     end
 
+    -- TODO: Lua 5.1中，主线程与_G都不在注册表里
     local result = private {
         name = formatName(registry),
         type = 'root',
@@ -492,5 +497,7 @@ m.enableCache = private(function (flag)
         m._lastCache = nil
     end
 end)
+
+private(running())
 
 return m
