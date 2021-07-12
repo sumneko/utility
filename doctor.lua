@@ -14,7 +14,6 @@ local getupvalue     = debug.getupvalue
 local getuservalue   = debug.getuservalue or debug.getfenv
 local getlocal       = debug.getlocal
 local getinfo        = debug.getinfo
-local running        = coroutine.running
 local maxinterger    = 10000
 local mathType       = math.type
 local _G             = _G
@@ -498,6 +497,6 @@ m.enableCache = private(function (flag)
     end
 end)
 
-private(running())
+private(getinfo(1, 'f').func)
 
 return m
