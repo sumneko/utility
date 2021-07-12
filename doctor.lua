@@ -15,8 +15,6 @@ local mathType       = math.type
 local _G             = _G
 local registry       = getregistry()
 
-local m = {}
-
 _ENV = nil
 
 local function getTostring(obj)
@@ -104,14 +102,22 @@ local function formatName(obj)
     end
 end
 
+local _private = {}
+local function private(o)
+    _private[o] = true
+    return o
+end
+
+local m = private {}
 --- 获取内存快照，生成一个内部数据结构。
 --- 一般不用这个API，改用 report 或 catch。
 ---@return table
-function m.snapshot()
+m.snapshot = private(function ()
+    if m._lastCache then
+        return m._lastCache
+    end
     local mark = {}
     local find
-    local pushtoqueue
-    local queue = {}
     local exclude = {}
 
     if m._exclude then
@@ -137,9 +143,9 @@ function m.snapshot()
         end
         for k, v in next, t do
             if not wk then
-                local keyInfo = pushtoqueue(k)
+                local keyInfo = find(k)
                 if keyInfo then
-                    result[#result+1] = {
+                    result[#result+1] = private {
                         type = 'key',
                         name = formatName(k),
                         info = keyInfo,
@@ -147,9 +153,9 @@ function m.snapshot()
                 end
             end
             if not wv then
-                local valueInfo = pushtoqueue(v)
+                local valueInfo = find(v)
                 if valueInfo then
-                    result[#result+1] = {
+                    result[#result+1] = private {
                         type = 'field',
                         name = formatName(k) .. '|' .. formatName(v),
                         info = valueInfo,
@@ -157,54 +163,32 @@ function m.snapshot()
                 end
             end
         end
-        local MTInfo = pushtoqueue(getmetatable(t))
+        local MTInfo = find(getmetatable(t))
         if MTInfo then
-            result[#result+1] = {
+            result[#result+1] = private {
                 type = 'metatable',
                 name = '',
                 info = MTInfo,
             }
         end
-        if #result == 0 then
-            return nil
-        end
         return result
     end
 
-    local function findFunction(f, result, trd, stack)
+    local function findFunction(f, result)
         result = result or {}
         for i = 1, maxinterger do
             local n, v = getupvalue(f, i)
             if not n then
                 break
             end
-            local valueInfo = pushtoqueue(v)
+            local valueInfo = find(v)
             if valueInfo then
-                result[#result+1] = {
+                result[#result+1] = private {
                     type = 'upvalue',
                     name = n,
                     info = valueInfo,
                 }
             end
-        end
-        if trd then
-            for i = 1, maxinterger do
-                local n, l = getlocal(trd, stack, i)
-                if not n then
-                    break
-                end
-                local valueInfo = pushtoqueue(l)
-                if valueInfo then
-                    result[#result+1] = {
-                        type = 'local',
-                        name = n,
-                        info = valueInfo,
-                    }
-                end
-            end
-        end
-        if #result == 0 then
-            return nil
         end
         return result
     end
@@ -216,18 +200,18 @@ function m.snapshot()
             if not b then
                 break
             end
-            local valueInfo = pushtoqueue(v)
+            local valueInfo = find(v)
             if valueInfo then
-                result[#result+1] = {
+                result[#result+1] = private {
                     type = 'uservalue',
                     name = formatName(i),
                     info = valueInfo,
                 }
             end
         end
-        local MTInfo = pushtoqueue(getmetatable(u))
+        local MTInfo = find(getmetatable(u))
         if MTInfo then
-            result[#result+1] = {
+            result[#result+1] = private {
                 type = 'metatable',
                 name = '',
                 info = MTInfo,
@@ -241,19 +225,33 @@ function m.snapshot()
 
     local function findThread(trd, result)
         -- 不查找主线程，主线程一定是临时的（视为弱引用）
-        if trd == registry[1] then
+        if m._ignoreMainThread and trd == registry[1] then
             return nil
         end
-        result = result or {}
+        result = result or private {}
 
         for i = 1, maxinterger do
             local info = getinfo(trd, i, 'Sf')
             if not info then
                 break
             end
-            local funcInfo = pushtoqueue(info.func, trd, i)
+            local funcInfo = find(info.func)
             if funcInfo then
-                result[#result+1] = {
+                for ln = 1, maxinterger do
+                    local n, l = getlocal(trd, i, ln)
+                    if not n then
+                        break
+                    end
+                    local valueInfo = find(l)
+                    if valueInfo then
+                        funcInfo[#funcInfo+1] = private {
+                            type = 'local',
+                            name = n,
+                            info = valueInfo,
+                        }
+                    end
+                end
+                result[#result+1] = private {
                     type = 'stack',
                     name = i .. '@' .. formatName(info.func),
                     info = funcInfo,
@@ -267,22 +265,25 @@ function m.snapshot()
         return result
     end
 
-    function find(obj, trd, stack)
---        if mark[obj] then
---            return mark[obj]
---        end
+    function find(obj)
+        if mark[obj] then
+            return mark[obj]
+        end
+        if exclude[obj] or _private[obj] then
+            return nil
+        end
         local tp = type(obj)
         if tp == 'table' then
---            mark[obj] = {}
+            mark[obj] = private {}
             mark[obj] = findTable(obj, mark[obj])
         elseif tp == 'function' then
---            mark[obj] = {}
-            mark[obj] = findFunction(obj, mark[obj], trd, stack)
+            mark[obj] = private {}
+            mark[obj] = findFunction(obj, mark[obj])
         elseif tp == 'userdata' then
---           mark[obj] = {}
+            mark[obj] = private {}
             mark[obj] = findUserData(obj, mark[obj])
         elseif tp == 'thread' then
---            mark[obj] = {}
+            mark[obj] = private {}
             mark[obj] = findThread(obj, mark[obj])
         else
             return nil
@@ -293,43 +294,23 @@ function m.snapshot()
         return mark[obj]
     end
 
-    function pushtoqueue(obj, trd, stack)
-        if obj ~= obj or obj == nil then
-            return
-        end
-        if mark[obj] or obj == nil then
-            return mark[obj]
-        end
-        mark[obj] = {}
-        queue[#queue + 1] = {obj, trd, stack}
-        return mark[obj]
-    end
-
-    local function bfs()
-        for i = 1, maxinterger do
-            if not queue[i] then
-                break
-            end
-            if not exclude[queue[i][1]] then
-                find(queue[i][1], queue[i][2], queue[i][3])
-            end
-        end
-    end
-
-    pushtoqueue(registry)
-    bfs()
-    return {
+    local result = private {
         name = formatName(registry),
         type = 'root',
-        info = mark[registry]
+        info = find(registry),
     }
-end
+    if m._cache then
+        m._lastCache = result
+    end
+    return result
+end)
 
 --- 遍历虚拟机，寻找对象的引用。
---- 返回字符串数组，每个字符串描述了如何从根节点引用到指定的对象。
+--- 输入既可以是对象实体，也可以是对象的描述（从其他接口的返回值中复制过来）。
+--- 返回字符串数组的数组，每个字符串描述了如何从根节点引用到指定的对象。
 --- 可以同时查找多个对象。
----@return string[]
-function m.catch(...)
+---@return string[][]
+m.catch = private(function (...)
     local targets = {}
     for _, target in ipairs {...} do
         targets[target] = true
@@ -376,13 +357,14 @@ function m.catch(...)
     search(report)
 
     return result
-end
+end)
+
+---@alias report {point: string, count: integer, name: string, childs: integer}
 
 --- 生成一个内存快照的报告。
---- 会返回一个字符串数组，每个字符串描述了一个对象以及它被引用的次数。
 --- 你应当将其输出到一个文件里再查看。
----@return string[]
-function m.report()
+---@return report[]
+m.report = private(function ()
     local snapshot = m.snapshot()
     local cache = {}
     local mark = {}
@@ -420,17 +402,17 @@ function m.report()
         list[#list+1] = info
     end
     return list
-end
+end)
 
 --- 在进行快照相关操作时排除掉的对象。
 --- 你可以用这个功能排除掉一些数据表。
-function m.exclude(...)
-    m._exclude = {...}
-end
+m.exclude = private(function (...)
+    m._exclude = private {...}
+end)
 
 --- 比较2个报告
 ---@return string
-function m.compare(old, new)
+m.compare = private(function (old, new)
     local newHash = {}
     local ret = {}
     for _, info in ipairs(new) do
@@ -445,4 +427,23 @@ function m.compare(old, new)
         end
     end
     return ret
-end
+end)
+
+--- 是否忽略主线程的栈
+---@param flag boolean
+m.ignoreMainThread = private(function (flag)
+    m._ignoreMainThread = flag
+end)
+
+--- 是否启用缓存，启用后会始终使用第一次查找的结果，
+--- 适用于连续查找引用。如果想要查找新的引用需要先关闭缓存。
+m.enableCache = private(function (flag)
+    if flag then
+        m._cache = true
+    else
+        m._cache = false
+        m._lastCache = nil
+    end
+end)
+
+return m
