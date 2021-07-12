@@ -35,21 +35,16 @@ local function getPoint(obj)
                 rawset(mt, '__tostring', nil)
             end
         end
-        local point = tostring(obj)
+        local name = tostring(obj)
         if ts then
             rawset(mt, '__tostring', ts)
         end
-        return point
+        return name:match(': (.+)')
     end
 end
 
 local function formatObject(obj, tp, ext)
-    local text
-    if hasPoint then
-        text = ('%s:%p'):format(tp, obj)
-    else
-        text = getPoint(obj)
-    end
+    local text = ('%s:%s'):format(tp, getPoint(obj))
     if ext then
         text = ('%s(%s)'):format(text, ext)
     end
@@ -166,15 +161,26 @@ m.snapshot = private(function ()
     if m._lastCache then
         return m._lastCache
     end
-    local mark = {}
-    local find
-    local exclude = {}
 
+    local exclude = {}
     if m._exclude then
         for _, o in ipairs(m._exclude) do
             exclude[o] = true
         end
     end
+    local function private(o)
+        if not o then
+            return nil
+        end
+        exclude[o] = true
+        return o
+    end
+
+    private(exclude)
+
+    local find
+    local mark = private {}
+
 
     local function findTable(t, result)
         result = result or {}
@@ -315,6 +321,48 @@ m.snapshot = private(function ()
         return result
     end
 
+    local function findMainThread()
+        -- 不查找主线程，主线程一定是临时的（视为弱引用）
+        if m._ignoreMainThread then
+            return nil
+        end
+        local result = private {}
+
+        for i = 1, maxinterger do
+            local info = getinfo(i, 'Sf')
+            if not info then
+                break
+            end
+            local funcInfo = find(info.func)
+            if funcInfo then
+                for ln = 1, maxinterger do
+                    local n, l = getlocal(i, ln)
+                    if not n then
+                        break
+                    end
+                    local valueInfo = find(l)
+                    if valueInfo then
+                        funcInfo[#funcInfo+1] = private {
+                            type = 'local',
+                            name = n,
+                            info = valueInfo,
+                        }
+                    end
+                end
+                result[#result+1] = private {
+                    type = 'stack',
+                    name = i .. '@' .. formatName(info.func),
+                    info = funcInfo,
+                }
+            end
+        end
+
+        if #result == 0 then
+            return nil
+        end
+        return result
+    end
+
     function find(obj)
         if mark[obj] then
             return mark[obj]
@@ -350,6 +398,20 @@ m.snapshot = private(function ()
         type = 'root',
         info = find(registry),
     }
+    if not registry[1] then
+        result.info[#result.info+1] = private {
+            type = 'thread',
+            name = 'main',
+            info = findMainThread(),
+        }
+    end
+    if not registry[2] then
+        result.info[#result.info+1] = private {
+            type = '_G',
+            name = '_G',
+            info = find(_G),
+        }
+    end
     if m._cache then
         m._lastCache = result
     end
@@ -367,9 +429,9 @@ m.catch = private(function (...)
         targets[target] = true
     end
     local report = m.snapshot()
-    local path = {}
+    local path =   {}
     local result = {}
-    local mark = {}
+    local mark =   {}
 
     local function push()
         local resultPath = {}
@@ -458,7 +520,7 @@ end)
 --- 在进行快照相关操作时排除掉的对象。
 --- 你可以用这个功能排除掉一些数据表。
 m.exclude = private(function (...)
-    m._exclude = private {...}
+    m._exclude = {...}
 end)
 
 --- 比较2个报告
