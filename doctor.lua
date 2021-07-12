@@ -3,19 +3,66 @@ local next           = next
 local pairs          = pairs
 local ipairs         = ipairs
 local rawget         = rawget
+local rawset         = rawset
 local pcall          = pcall
+local tostring       = tostring
+local sformat        = string.format
 local getregistry    = debug.getregistry
 local getmetatable   = debug.getmetatable
 local getupvalue     = debug.getupvalue
-local getuservalue   = debug.getuservalue
+---@diagnostic disable-next-line: deprecated
+local getuservalue   = debug.getuservalue or debug.getfenv
 local getlocal       = debug.getlocal
 local getinfo        = debug.getinfo
-local maxinterger    = math.maxinteger
+local maxinterger    = 10000
 local mathType       = math.type
 local _G             = _G
 local registry       = getregistry()
 
 _ENV = nil
+
+local hasPoint = pcall(sformat, '%p', _G)
+
+local function getPoint(obj)
+    if hasPoint then
+        return ('%p'):format(obj)
+    else
+        local mt = getmetatable(obj)
+        local ts
+        if mt then
+            ts = rawget(mt, '__tostring')
+            if ts then
+                rawset(mt, '__tostring', nil)
+            end
+        end
+        local point = tostring(obj)
+        if ts then
+            rawset(mt, '__tostring', ts)
+        end
+        return point
+    end
+end
+
+local function formatObject(obj, tp, ext)
+    local text
+    if hasPoint then
+        text = ('%s:%p'):format(tp, obj)
+    else
+        text = getPoint(obj)
+    end
+    if ext then
+        text = ('%s(%s)'):format(text, ext)
+    end
+    return text
+end
+
+local function isInteger(obj)
+    if mathType then
+        return mathType(obj) == 'integer'
+    else
+        return obj % 1 == 0
+    end
+end
 
 local function getTostring(obj)
     local mt = getmetatable(obj)
@@ -47,7 +94,7 @@ local function formatName(obj)
             return 'boolean:false'
         end
     elseif tp == 'number' then
-        if mathType(obj) == 'integer' then
+        if isInteger(obj) then
             return ('number:%d'):format(obj)
         else
             -- 如果浮点数可以完全表示为整数，那么就转换为整数
@@ -70,11 +117,11 @@ local function formatName(obj)
     elseif tp == 'function' then
         local info = getinfo(obj, 'S')
         if info.what == 'c' then
-            return ('function:%p(C)'):format(obj)
+            return formatObject(obj, 'function', 'C')
         elseif info.what == 'main' then
-            return ('function:%p(main)'):format(obj)
+            return formatObject(obj, 'function', 'main')
         else
-            return ('function:%p(%s:%d-%d)'):format(obj, info.source, info.linedefined, info.lastlinedefined)
+            return formatObject(obj, 'function', ('%s:%d-%d'):format(info.source, info.linedefined, info.lastlinedefined))
         end
     elseif tp == 'table' then
         local id = getTostring(obj)
@@ -86,19 +133,19 @@ local function formatName(obj)
             end
         end
         if id then
-            return ('table:%p(%s)'):format(obj, id)
+            return formatObject(obj, 'table', id)
         else
-            return ('table:%p'):format(obj)
+            return formatObject(obj, 'table')
         end
     elseif tp == 'userdata' then
         local id = getTostring(obj)
         if id then
-            return ('userdata:%p(%s)'):format(obj, id)
+            return formatObject(obj, 'userdata', id)
         else
-            return ('userdata:%p'):format(obj)
+            return formatObject(obj, 'userdata')
         end
     else
-        return ('%s:%p'):format(tp, obj)
+        return formatName(obj, tp)
     end
 end
 
@@ -331,7 +378,7 @@ m.catch = private(function (...)
     local function search(t)
         path[#path+1] = ('(%s)%s'):format(t.type, t.name)
         local addTarget
-        local point = ('%p'):format(t.info.object)
+        local point = getPoint(t.info.object)
         if targets[t.info.object] then
             targets[t.info.object] = nil
             addTarget = t.info.object
@@ -377,7 +424,7 @@ m.report = private(function ()
         or tp == 'function'
         or tp == 'string'
         or tp == 'thread' then
-            local point = ('%p'):format(obj)
+            local point = getPoint(obj)
             if not cache[point] then
                 cache[point] = {
                     point  = point,
