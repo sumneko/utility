@@ -559,6 +559,11 @@ m.enableCache = private(function (flag)
     end
 end)
 
+--- 立即清除缓存
+m.flushCache = private(function ()
+    m._lastCache = nil
+end)
+
 private(getinfo(1, 'f').func)
 
 return m
