@@ -6,6 +6,7 @@ local rawget         = rawget
 local rawset         = rawset
 local pcall          = pcall
 local tostring       = tostring
+local stderr         = io.stderr
 local sformat        = string.format
 local getregistry    = debug.getregistry
 local getmetatable   = debug.getmetatable
@@ -21,7 +22,8 @@ local registry       = getregistry()
 
 _ENV = nil
 
-local hasPoint = pcall(sformat, '%p', _G)
+local hasPoint       = pcall(sformat, '%p', _G)
+local multiUserValue = not pcall(getuservalue, stderr, '')
 
 local function getPoint(obj)
     if hasPoint then
@@ -251,7 +253,8 @@ m.snapshot = private(function ()
 
     local function findUserData(u, result)
         result = result or {}
-        for i = 1, maxinterger do
+        local maxUserValue = multiUserValue and maxinterger or 1
+        for i = 1, maxUserValue do
             local v, b = getuservalue(u, i)
             if not b then
                 break
