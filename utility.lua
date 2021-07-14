@@ -41,7 +41,7 @@ local function formatNumber(n)
     if isInteger(n) then
         return tostring(n)
     end
-    local str = ('%.10f'):format(n)
+    local str = ('%.17f'):format(n)
     str = str:gsub('%.?0*$', '')
     return str
 end
