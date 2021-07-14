@@ -6,6 +6,7 @@ local rawget         = rawget
 local rawset         = rawset
 local pcall          = pcall
 local tostring       = tostring
+local select         = select
 local stderr         = io.stderr
 local sformat        = string.format
 local getregistry    = debug.getregistry
@@ -428,8 +429,11 @@ end)
 ---@return string[][]
 m.catch = private(function (...)
     local targets = {}
-    for _, target in ipairs {...} do
-        targets[target] = true
+    for i = 1, select('#', ...) do
+        local target = select(i, ...)
+        if target ~= nil then
+            targets[target] = true
+        end
     end
     local report = m.snapshot()
     local path =   {}
