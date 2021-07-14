@@ -148,6 +148,10 @@ local function formatName(obj)
 end
 
 local _private = {}
+
+---@generic T
+---@param o T
+---@return T
 local function private(o)
     if not o then
         return nil
@@ -557,6 +561,7 @@ end)
 
 --- 是否启用缓存，启用后会始终使用第一次查找的结果，
 --- 适用于连续查找引用。如果想要查找新的引用需要先关闭缓存。
+---@param flag boolean
 m.enableCache = private(function (flag)
     if flag then
         m._cache = true
