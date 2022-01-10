@@ -141,21 +141,39 @@ function mt:getSize()
     return self._size
 end
 
-function mt:pairs()
-    local next = self._right[HEAD]
-    return function ()
-        local current = next
-        if current == TAIL then
-            return nil
+function mt:pairs(start, revert)
+    if revert then
+        if start == nil then
+            start = self._left[TAIL]
         end
-        next = self._right[current]
-        return current
+        local next = start
+        return function ()
+            local current = next
+            if current == HEAD then
+                return nil
+            end
+            next = self._left[current]
+            return current
+        end
+    else
+        if start == nil then
+            start = self._right[HEAD]
+        end
+        local next = start
+        return function ()
+            local current = next
+            if current == TAIL then
+                return nil
+            end
+            next = self._right[current]
+            return current
+        end
     end
 end
 
-function mt:dump()
+function mt:dump(start, revert)
     local t = {}
-    for node in self:pairs() do
+    for node in self:pairs(start, revert) do
         t[#t+1] = tostring(node)
     end
     return table.concat(t, ' ')

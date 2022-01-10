@@ -33,6 +33,10 @@ lt:replace(4, 3)
 assert(lt:dump() == '8 6 7 3 5 2 1')
 assert(lt:getSize() == 7)
 
+assert(lt:dump(3) == '3 5 2 1')
+assert(lt:dump(nil, true) == '1 2 5 3 7 6 8')
+assert(lt:dump(3, true) == '3 7 6 8')
+
 lt:reset()
 assert(lt:dump() == '')
 assert(lt:getSize() == 0)
