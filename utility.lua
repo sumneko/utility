@@ -16,10 +16,13 @@ local mathAbs      = math.abs
 local mathRandom   = math.random
 local ioOpen       = io.open
 local utf8Len      = utf8.len
+local getenv       = os.getenv
+local getupvalue   = debug.getupvalue
 local mathHuge     = math.huge
 local inf          = 1 / 0
 local nan          = 0 / 0
 local utf8         = utf8
+local error        = error
 
 _ENV = nil
 
@@ -41,7 +44,7 @@ local function formatNumber(n)
     if isInteger(n) then
         return tostring(n)
     end
-    local str = ('%.17f'):format(n)
+    local str = ('%.10f'):format(n)
     str = str:gsub('%.?0*$', '')
     return str
 end
@@ -91,8 +94,10 @@ function m.dump(tbl, option)
     end
     local lines = {}
     local mark = {}
+    local stack = {}
     lines[#lines+1] = '{'
-    local function unpack(tbl, deep)
+    local function unpack(tbl)
+        local deep = #stack
         mark[tbl] = (mark[tbl] or 0) + 1
         local keys = {}
         local keymap = {}
@@ -150,8 +155,9 @@ function m.dump(tbl, option)
             end
             local value = tbl[key]
             local tp = type(value)
-            if option['format'] and option['format'][key] then
-                lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, option['format'][key](value, unpack, deep+1))
+            local format = option['format'] and option['format'][key]
+            if format then
+                lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, format(value, unpack, deep+1, stack))
             elseif tp == 'table' then
                 if mark[value] and mark[value] > 0 then
                     lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, option['loop'] or '"<Loop>"')
@@ -159,7 +165,9 @@ function m.dump(tbl, option)
                     lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, '"<Deep>"')
                 else
                     lines[#lines+1] = ('%s%s{'):format(TAB[deep+1], keyWord)
-                    unpack(value, deep+1)
+                    stack[#stack+1] = key
+                    unpack(value)
+                    stack[#stack] = nil
                     lines[#lines+1] = ('%s},'):format(TAB[deep+1])
                 end
             elseif tp == 'string' then
@@ -173,7 +181,7 @@ function m.dump(tbl, option)
         end
         mark[tbl] = mark[tbl] - 1
     end
-    unpack(tbl, 0)
+    unpack(tbl)
     lines[#lines+1] = '}'
     return tableConcat(lines, '\r\n')
 end
@@ -272,17 +280,23 @@ end
 
 --- 读取文件
 ---@param path string
-function m.loadFile(path)
+function m.loadFile(path, keepBom)
     local f, e = ioOpen(path, 'rb')
     if not f then
         return nil, e
     end
-    if f:read(3) ~= '\xEF\xBB\xBF' then
-        f:seek("set")
-    end
-    local buf = f:read 'a'
+    local text = f:read 'a'
     f:close()
-    return buf
+    if not keepBom then
+        if text:sub(1, 3) == '\xEF\xBB\xBF' then
+            return text:sub(4)
+        end
+        if text:sub(1, 2) == '\xFF\xFE'
+        or text:sub(1, 2) == '\xFE\xFF' then
+            return text:sub(3)
+        end
+    end
+    return text
 end
 
 --- 写入文件
@@ -317,12 +331,12 @@ end
 
 --- 排序后遍历
 ---@param t table
-function m.sortPairs(t)
+function m.sortPairs(t, sorter)
     local keys = {}
     for k in pairs(t) do
         keys[#keys+1] = k
     end
-    tableSort(keys)
+    tableSort(keys, sorter)
     local i = 0
     return function ()
         i = i + 1
@@ -632,6 +646,79 @@ function m.trim(str, mode)
         return str:gsub('%s+$', '')
     end
     return str:match '^%s*(%S+)%s*$'
+end
+
+function m.expandPath(path)
+    if type(path) ~= 'string' then
+        return nil
+    end
+    if path:sub(1, 1) == '~' then
+        local home = getenv('HOME')
+        if not home then -- has to be Windows
+            home = getenv 'USERPROFILE' or (getenv 'HOMEDRIVE' .. getenv 'HOMEPATH')
+        end
+        return home .. path:sub(2)
+    elseif path:sub(1, 1) == '$' then
+        path = path:gsub('%$([%w_]+)', getenv)
+        return path
+    end
+    return path
+end
+
+function m.arrayToHash(l)
+    local t = {}
+    for i = 1, #l do
+        t[l[i]] = true
+    end
+    return t
+end
+
+function m.switch()
+    local map = {}
+    local cachedCases = {}
+    local obj = {
+        case = function (self, name)
+            cachedCases[#cachedCases+1] = name
+            return self
+        end,
+        call = function (self, callback)
+            for i = 1, #cachedCases do
+                local name = cachedCases[i]
+                cachedCases[i] = nil
+                if map[name] then
+                    error('Repeated fields:' .. tostring(name))
+                end
+                map[name] = callback
+            end
+            return self
+        end,
+        getMap = function (self)
+            return map
+        end
+    }
+    return obj
+end
+
+---@param f async fun()
+function m.getUpvalue(f, name)
+    for i = 1, 999 do
+        local uname, value = getupvalue(f, i)
+        if not uname then
+            break
+        end
+        if name == uname then
+            return value, true
+        end
+    end
+    return nil, false
+end
+
+function m.stringStartWith(str, head)
+    return str:sub(1, #head) == head
+end
+
+function m.stringEndWith(str, tail)
+    return str:sub(-#tail) == tail
 end
 
 return m
