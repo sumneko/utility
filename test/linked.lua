@@ -31,6 +31,8 @@ assert(lt:dump() == '8 6 7 4 5 2 1')
 
 lt:replace(4, 3)
 assert(lt:dump() == '8 6 7 3 5 2 1')
+assert(lt:getSize() == 7)
 
 lt:reset()
 assert(lt:dump() == '')
+assert(lt:getSize() == 0)

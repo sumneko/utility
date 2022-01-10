@@ -164,6 +164,8 @@ end
 function mt:reset()
     self._left  = { [TAIL] = HEAD }
     self._right = { [HEAD] = TAIL }
+
+    self._size = 0
 end
 
 return function ()
