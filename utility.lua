@@ -157,7 +157,10 @@ function m.dump(tbl, option)
             local tp = type(value)
             local format = option['format'] and option['format'][key]
             if format then
-                lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, format(value, unpack, deep+1, stack))
+                local fvalue = format(value, unpack, deep+1, stack)
+                if fvalue then
+                    lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, fvalue)
+                end
             elseif tp == 'table' then
                 if mark[value] and mark[value] > 0 then
                     lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, option['loop'] or '"<Loop>"')
