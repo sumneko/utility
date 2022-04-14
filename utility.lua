@@ -139,6 +139,7 @@ function m.dump(tbl, option)
                 end)
             end
         end
+        local format = option['format']
         for _, key in ipairs(keys) do
             local keyWord = keymap[key]
             if option['noArrayKey']
@@ -155,9 +156,9 @@ function m.dump(tbl, option)
             end
             local value = tbl[key]
             local tp = type(value)
-            local format = option['format'] and option['format'][key]
-            if format then
-                local fvalue = format(value, unpack, deep+1, stack)
+            local vformat = type(format) == 'table' and option['format'][key]
+            if vformat then
+                local fvalue = vformat(value, unpack, deep+1, stack)
                 if fvalue then
                     lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, fvalue)
                 end
