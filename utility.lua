@@ -8,6 +8,7 @@ local ipairs       = ipairs
 local next         = next
 local rawset       = rawset
 local move         = table.move
+local tableRemove  = table.remove
 local setmetatable = debug.setmetatable
 local mathType     = math.type
 local mathCeil     = math.ceil
@@ -22,6 +23,7 @@ local mathHuge     = math.huge
 local inf          = 1 / 0
 local nan          = 0 / 0
 local error        = error
+local assert       = assert
 
 _ENV = nil
 
@@ -43,7 +45,7 @@ local function formatNumber(n)
     if isInteger(n) then
         return tostring(n)
     end
-    local str = ('%.17f'):format(n)
+    local str = ('%.10f'):format(n)
     str = str:gsub('%.?0*$', '')
     return str
 end
@@ -156,8 +158,10 @@ function m.dump(tbl, option)
             local tp = type(value)
             local format = option['format'] and option['format'][key]
             if format then
-                lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, format(value, unpack, deep+1, stack))
-            elseif tp == 'table' then
+                value = format(value, unpack, deep+1, stack)
+                tp    = type(value)
+            end
+            if tp == 'table' then
                 if mark[value] and mark[value] > 0 then
                     lines[#lines+1] = ('%s%s%s,'):format(TAB[deep+1], keyWord, option['loop'] or '"<Loop>"')
                 elseif deep >= (option['deep'] or mathHuge) then
@@ -788,6 +792,43 @@ function m.multiTable(count, default)
         end })
     end
     return current
+end
+
+function m.getTableKeys(t, sorter)
+    local keys = {}
+    for k in pairs(t) do
+        keys[#keys+1] = k
+    end
+    if sorter == true then
+        tableSort(keys)
+    elseif sorter then
+        tableSort(keys, sorter)
+    end
+    return keys
+end
+
+function m.arrayHas(array, value)
+    for i = 1, #array do
+        if array[i] == value then
+            return true
+        end
+    end
+    return false
+end
+
+function m.arrayInsert(array, value)
+    if not m.arrayHas(array, value) then
+        array[#array+1] = value
+    end
+end
+
+function m.arrayRemove(array, value)
+    for i = 1, #array do
+        if array[i] == value then
+            tableRemove(array, i)
+            return
+        end
+    end
 end
 
 m.MODE_K  = { __mode = 'k' }
