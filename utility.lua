@@ -83,7 +83,7 @@ local RESERVED = {
 local m = {}
 
 --- 打印表的结构
----@param tbl table
+---@param tbl any
 ---@param option? table
 ---@return string
 function m.dump(tbl, option)
@@ -192,24 +192,18 @@ end
 --- 递归判断A与B是否相等
 ---@param a any
 ---@param b any
----@param lock? table
 ---@return boolean
-function m.equal(a, b, lock)
+function m.equal(a, b)
     local tp1 = type(a)
     local tp2 = type(b)
     if tp1 ~= tp2 then
         return false
     end
     if tp1 == 'table' then
-        lock = lock or {}
-        if lock[a] then
-            return true
-        end
-        lock[a] = true
         local mark = {}
         for k, v in pairs(a) do
             mark[k] = true
-            local res = m.equal(v, b[k], lock)
+            local res = m.equal(v, b[k])
             if not res then
                 return false
             end
@@ -289,6 +283,9 @@ end
 
 --- 读取文件
 ---@param path string
+---@param keepBom? boolean
+---@return string? text
+---@return string? errMsg
 function m.loadFile(path, keepBom)
     local f, e = ioOpen(path, 'rb')
     if not f then
@@ -314,6 +311,8 @@ end
 --- 写入文件
 ---@param path string
 ---@param content string
+---@return boolean ok
+---@return string? errMsg
 function m.saveFile(path, content)
     local f, e = ioOpen(path, "wb")
 
@@ -342,7 +341,10 @@ function m.counter(init, step)
 end
 
 --- 排序后遍历
----@param t table
+---@generic K, V
+---@param t table<K, V>
+---@param sorter? fun(a: K, b: K): boolean
+---@return fun(): K, V
 function m.sortPairs(t, sorter)
     local keys = {}
     for k in pairs(t) do
@@ -360,6 +362,7 @@ end
 --- 深拷贝（不处理元表）
 ---@param source  table
 ---@param target? table
+---@return table
 function m.deepCopy(source, target)
     local mark = {}
     local function copy(a, b)
@@ -382,6 +385,8 @@ function m.deepCopy(source, target)
 end
 
 --- 序列化
+---@param t table
+---@return table
 function m.unpack(t)
     local result = {}
     local tid = 0
@@ -409,6 +414,8 @@ function m.unpack(t)
 end
 
 --- 反序列化
+---@param t table
+---@return table
 function m.pack(t)
     local cache = {}
     local function pack(id)
@@ -587,7 +594,7 @@ end
 ---遍历文本的每一行
 ---@param text string
 ---@param keepNL? boolean # 保留换行符
----@return fun():string, integer
+---@return fun():string?, integer?
 function m.eachLine(text, keepNL)
     local offset = 1
     local lineCount = 0
@@ -736,6 +743,7 @@ function switchMT:has(name)
 end
 
 ---@param name string
+---@param ... any
 ---@return ...
 function switchMT:__call(name, ...)
     local callback = self.map[name] or self._default
@@ -755,6 +763,8 @@ function m.switch()
 end
 
 ---@param f async fun()
+---@param name string
+---@return any, boolean
 function m.getUpvalue(f, name)
     for i = 1, 999 do
         local uname, value = getupvalue(f, i)
@@ -778,6 +788,9 @@ end
 
 function m.defaultTable(default)
     return setmetatable({}, { __index = function (t, k)
+        if k == nil then
+            return nil
+        end
         local v = default(k)
         t[k] = v
         return v
@@ -788,12 +801,18 @@ function m.multiTable(count, default)
     local current
     if default then
         current = setmetatable({}, { __index = function (t, k)
+            if k == nil then
+                return nil
+            end
             local v = default(k)
             t[k] = v
             return v
         end })
     else
         current = setmetatable({}, { __index = function (t, k)
+            if k == nil then
+                return nil
+            end
             local v = {}
             t[k] = v
             return v
@@ -801,6 +820,9 @@ function m.multiTable(count, default)
     end
     for _ = 3, count do
         current = setmetatable({}, { __index = function (t, k)
+            if k == nil then
+                return nil
+            end
             t[k] = current
             return current
         end })
@@ -810,6 +832,7 @@ end
 
 ---@param t table
 ---@param sorter boolean|function
+---@return any[]
 function m.getTableKeys(t, sorter)
     local keys = {}
     for k in pairs(t) do
@@ -830,6 +853,15 @@ function m.arrayHas(array, value)
         end
     end
     return false
+end
+
+function m.arrayIndexOf(array, value)
+    for i = 1, #array do
+        if array[i] == value then
+            return i
+        end
+    end
+    return nil
 end
 
 function m.arrayInsert(array, value)
