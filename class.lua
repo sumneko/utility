@@ -2,7 +2,44 @@
 local M = {}
 
 ---@private
+---@type table<string, Class.Base>
 M._classes = {}
+
+---@private
+---@type table<string, Class.Data>
+M._classData = {}
+
+---@private
+M._errorHandler = error
+
+---@class Class.Base
+---@field public  __init  fun(self: any, ...)
+---@field public  __del   fun(self: any)
+---@field public  __alloc fun(self: any)
+---@field package __call  fun(self: any, ...)
+
+---@class Class.Data
+---@field name         string
+---@field extendsMap   table<string, boolean>
+---@field extendsCalls Class.Extends.CallData[]
+---@field superCache   table<string, fun(...)>
+---@field superClass?  Class.Base
+local Data = {}
+
+---@private
+---@param name string
+---@return Class.Data
+function M.getData(name)
+    if not M._classData[name] then
+        M._classData[name] = setmetatable({
+            name         = name,
+            extendsMap   = {},
+            superCache   = {},
+            extendsCalls = {},
+        }, { __index = Data })
+    end
+    return M._classData[name]
+end
 
 -- 定义一个类
 ---@generic T: string
@@ -18,7 +55,7 @@ function M.declare(name, super)
     class.__name  = name
 
     function class:__call(...)
-        M.runConstructor(self, name, ...)
+        M.runInit(self, name, ...)
         return self
     end
 
@@ -26,20 +63,23 @@ function M.declare(name, super)
 
     local mt = {
         __call = function (self, ...)
-            if not self.alloc then
+            if not self.__alloc then
                 return self
             end
-            return self:alloc(...)
+            return self:__alloc(...)
         end,
     }
     setmetatable(class, mt)
 
     local superClass = M._classes[super]
     if superClass then
-        assert(class ~= superClass, ('class %q can not inherit itself'):format(name))
+        if class == superClass then
+            M._errorHandler(('class %q can not inherit itself'):format(name))
+        end
         mt.__index = superClass
 
-        class.__super = superClass
+        local data = M.getData(name)
+        data.superClass = superClass
     end
 
     return class
@@ -59,7 +99,9 @@ end
 ---@return T
 function M.new(name)
     local class = M._classes[name]
-    assert(class, ('class %q not found'):format(name))
+    if not class then
+        M._errorHandler(('class %q not found'):format(name))
+    end
 
     local instance = setmetatable({
         __class__ = name,
@@ -68,75 +110,88 @@ function M.new(name)
     return instance
 end
 
--- 获取类的名称
----@param obj any
----@return string?
-function M.type(obj)
-    if type(obj) ~= 'table' then
-        return nil
+-- 析构一个实例
+---@param obj table
+function M.delete(obj)
+    if obj.__deleted__ then
+        return
     end
-    return obj.__name
+    obj.__deleted__ = true
+    local name = obj.__class__
+    if not name then
+        M._errorHandler('can not delete undeclared class')
+    end
+
+    M.runDel(obj, name)
 end
 
----@private
-M._superCache = {}
+-- 获取类的名称
+---@param obj table
+---@return string?
+function M.type(obj)
+    return obj.__class__
+end
+
+-- 判断一个实例是否有效
+---@param obj table
+---@return boolean
+function M.isValid(obj)
+    return obj.__class__
+       and not obj.__deleted__
+end
 
 ---@param name string
 ---@return fun(...)
 function M.super(name)
-    if not M._superCache[name] then
-        local class = M._classes[name]
-        assert(class, ('class %q not found'):format(name))
-        local super = class.__super
-        assert(super, ('class %q not inherit from any class'):format(name))
-        M._superCache[name] = function (...)
-            local k, self = debug.getlocal(2, 1)
-            assert(k == 'self', ('`%s()` must be called by the class'):format(name))
-            super.__call(self,...)
-        end
-    end
-    return M._superCache[name]
+    local data = M.getData(name)
+    return data:getSuperCall(name)
 end
 
----@private
-M._componentCalls = {}
+---@alias Class.Extends.CallData { name: string, init?: fun(self: any, super: fun(...)) }
 
 ---@generic Class: string
----@generic Comp: string
+---@generic Extends: string
 ---@param name `Class`
----@param compName `Comp`
----@param init? fun(self: Class, super: Comp)
-function M.component(name, compName, init)
+---@param extendsName `Extends`
+---@param init? fun(self: Class, super: Extends)
+function M.extends(name, extendsName, init)
     local class = M._classes[name]
-    assert(class, ('class %q not found'):format(name))
-    local comp = M._classes[compName]
-    assert(comp, ('class %q not found'):format(compName))
-    assert(type(init) == 'nil' or type(init) == 'function', ('init must be nil or function'))
-    for k, v in pairs(comp) do
-        if not k:match '^__'
-        and k ~= 'constructor'
-        and k ~= 'alloc' then
-            assert(class[k] == nil, ('"%s.%s" is already defined'):format(name, k))
-            class[k] = v
+    if not class then
+        M._errorHandler(('class %q not found'):format(name))
+    end
+    local extends = M._classes[extendsName]
+    if not extends then
+        M._errorHandler(('class %q not found'):format(extendsName))
+    end
+    if type(init) ~= 'nil' and type(init) ~= 'function' then
+        M._errorHandler(('init must be nil or function'))
+    end
+    local data = M.getData(name)
+    if not data.extendsMap[extendsName] then
+        data.extendsMap[extendsName] = true
+        for k, v in pairs(extends) do
+            if not k:match '^__' then
+                if class[k] ~= nil then
+                    M._errorHandler(('"%s.%s" is already defined'):format(name, k))
+                end
+                class[k] = v
+            end
         end
     end
-    if not M._componentCalls[name] then
-        M._componentCalls[name] = {}
-    end
-    table.insert(M._componentCalls[name], {
+    table.insert(data.extendsCalls, {
         init = init,
-        name = compName,
+        name = extendsName,
     })
     -- 检查是否需要显性初始化
     if not init then
-        if not comp.constructor then
+        if not extends.__init then
             return
         end
-        local info = debug.getinfo(comp.constructor, 'u')
+        local info = debug.getinfo(extends.__init, 'u')
         if info.nparams <= 1 then
             return
         end
-        error(('must call super for component "%s"'):format(compName))
+        M._errorHandler(('must call super for extends "%s"'):format(extendsName))
     end
 end
 
@@ -144,23 +199,70 @@ end
 ---@param obj table
 ---@param name string
 ---@param ... any
-function M.runConstructor(obj, name,...)
+function M.runInit(obj, name, ...)
     local class = M._classes[name]
-    local compCalls = M._componentCalls[name]
-    if compCalls then
-        for _, call in ipairs(compCalls) do
+    local data  = M.getData(name)
+    local extendsCalls = data.extendsCalls
+    if extendsCalls then
+        for _, call in ipairs(extendsCalls) do
             if call.init then
                 call.init(obj, function (...)
-                    M.runConstructor(obj, call.name,...)
+                    M.runInit(obj, call.name, ...)
                 end)
             else
-                M.runConstructor(obj, call.name)
+                M.runInit(obj, call.name)
             end
         end
     end
-    if class.constructor then
-        class.constructor(obj,...)
+    if class.__init then
+        class.__init(obj, ...)
     end
+end
+
+---@private
+---@param obj table
+---@param name string
+function M.runDel(obj, name)
+    local class = M._classes[name]
+    local data  = M.getData(name)
+    local extendsCalls = data.extendsCalls
+    if extendsCalls then
+        for _, call in ipairs(extendsCalls) do
+            M.runDel(obj, call.name)
+        end
+    end
+    if class.__del then
+        class.__del(obj)
+    end
+end
+
+---@param errorHandler fun(msg: string)
+function M.setErrorHandler(errorHandler)
+    M._errorHandler = errorHandler
+end
+
+---@param name string
+---@return fun(...)
+function Data:getSuperCall(name)
+    if not self.superCache[name] then
+        local class = M._classes[name]
+        if not class then
+            M._errorHandler(('class %q not found'):format(name))
+        end
+        local super = self.superClass
+        if not super then
+            M._errorHandler(('class %q not inherit from any class'):format(name))
+        end
+        ---@cast super -?
+        self.superCache[name] = function (...)
+            local k, obj = debug.getlocal(2, 1)
+            if k ~= 'self' then
+                M._errorHandler(('`%s()` must be called by the class'):format(name))
+            end
+            super.__call(obj,...)
+        end
+    end
+    return self.superCache[name]
 end
 
 return M

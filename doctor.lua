@@ -21,6 +21,8 @@ local mathType       = math.type
 local _G             = _G
 local registry       = getregistry()
 local ccreate        = coroutine.create
+local setmetatable   = setmetatable
+local error          = error
 
 _ENV = nil
 
@@ -161,9 +163,20 @@ local function private(o)
     return o
 end
 
+---@class Doctor
 local m = private {}
 
+---@private
 m._ignoreMainThread = true
+
+---@private
+m._cache = false
+
+---@private
+m._exclude = nil
+
+---@private
+m._lastCache = nil
 
 --- 获取内存快照，生成一个内部数据结构。
 --- 一般不用这个API，改用 report 或 catch。
@@ -474,13 +487,30 @@ end)
 --- 输入既可以是对象实体，也可以是对象的描述（从其他接口的返回值中复制过来）。
 --- 返回字符串数组的数组，每个字符串描述了如何从根节点引用到指定的对象。
 --- 可以同时查找多个对象。
+---@param ... any
 ---@return string[][]
 m.catch = private(function (...)
     local targets = {}
-    for i = 1, select('#', ...) do
-        local target = select(i, ...)
-        if target ~= nil then
-            targets[target] = true
+    if not ... then
+        error('没有指定目标')
+    end
+    if ... == '*' then
+        setmetatable(targets, {
+            __index = function (t, k)
+                return type(k) == 'string'
+            end,
+            __newindex = function (t, k, v)
+                if v == nil then
+                    t[k] = false
+                end
+            end
+        })
+    else
+        for i = 1, select('#', ...) do
+            local target = select(i, ...)
+            if target ~= nil then
+                targets[target] = true
+            end
         end
     end
     local report = m.snapshot()
@@ -527,11 +557,11 @@ m.catch = private(function (...)
     return result
 end)
 
----@alias report {point: string, count: integer, name: string, childs: integer}
+---@alias Doctor.Report {point: string, count: integer, name: string, childs: integer}
 
 --- 生成一个内存快照的报告。
 --- 你应当将其输出到一个文件里再查看。
----@return report[]
+---@return Doctor.Report[]
 m.report = private(function ()
     local snapshot = m.snapshot()
     local cache = {}
@@ -579,6 +609,8 @@ m.exclude = private(function (...)
 end)
 
 --- 比较2个报告
+---@param old table
+---@param new table
 ---@return table
 m.compare = private(function (old, new)
     local newHash = {}
