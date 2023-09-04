@@ -55,6 +55,35 @@ assert(d.x == 1)
 assert(d.y == 2)
 assert(d.z == 3)
 
+---@class IA
+local IA = class.declare 'IA'
+
+IA.x = 1
+IA.y = 2
+
+local ia = class.new('IA', {
+    x = 2,
+})
+
+assert(ia.x == 2)
+assert(ia.y == 2)
+
+---@class IB: IA
+local IB = class.declare('IB')
+
+IB.z = 3
+
+class.extends('IB', 'IA')
+
+local ib = class.new('IB', {
+    z = 4,
+})
+
+assert(ib.x == 1)
+assert(ib.y == 2)
+assert(ib.z == 4)
+
+
 print('功能测试通过')
 
 ---------------- 性能测试 ----------------
@@ -68,14 +97,18 @@ local count = 1000000
 
 test('只创建表', function ()
     for _ = 1, count do
-        local t = {}
+        local t = {
+            x = 1,
+        }
     end
 end)
 
 test('创建表并设置元表', function ()
     local mt = {}
     for _ = 1, count do
-        local t = setmetatable({}, mt)
+        local t = setmetatable({
+            x = 1,
+        }, mt)
     end
 end)
 
@@ -94,5 +127,21 @@ end)
 test('创建D', function ()
     for _ = 1, count do
         local t = class.new 'D' (1, 2, 3)
+    end
+end)
+
+test('创建IA', function ()
+    for _ = 1, count do
+        local t = class.new('IA', {
+            x = 2,
+        })
+    end
+end)
+
+test('创建IB', function ()
+    for _ = 1, count do
+        local t = class.new('IB', {
+            z = 4,
+        })
     end
 end)

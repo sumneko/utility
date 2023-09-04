@@ -123,16 +123,20 @@ end
 -- 实例化一个类
 ---@generic T: string
 ---@param name `T`
+---@param tbl? table
 ---@return T
-function M.new(name)
+function M.new(name, tbl)
     local class = M._classes[name]
     if not class then
         M._errorHandler(('class %q not found'):format(name))
     end
 
-    local instance = setmetatable({
-        __class__ = name,
-    }, class)
+    if not tbl then
+        tbl = {}
+    end
+    tbl.__class__ = name
+
+    local instance = setmetatable(tbl, class)
 
     return instance
 end
