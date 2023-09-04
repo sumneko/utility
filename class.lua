@@ -173,13 +173,13 @@ function M.super(name)
     return config:super(name)
 end
 
----@alias Class.Extends.CallData { name: string, init?: fun(self: any, super: fun(...)) }
+---@alias Class.Extends.CallData { name: string, init?: fun(self: any, super: fun(...), ...) }
 
 ---@generic Class: string
 ---@generic Extends: string
 ---@param name `Class`
 ---@param extendsName `Extends`
----@param init? fun(self: Class, super: Extends)
+---@param init? fun(self: Class, super: Extends, ...)
 function M.extends(name, extendsName, init)
     local config = M.getConfig(name)
     config:extends(extendsName, init)
@@ -198,7 +198,7 @@ function M.runInit(obj, name, ...)
             if call.init then
                 call.init(obj, function (...)
                     M.runInit(obj, call.name, ...)
-                end)
+                end, ...)
             else
                 M.runInit(obj, call.name)
             end
