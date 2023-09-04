@@ -88,9 +88,12 @@ print('功能测试通过')
 
 ---------------- 性能测试 ----------------
 local function test(task, callback)
+    collectgarbage()
+    collectgarbage 'stop'
     local clock = os.clock()
     callback()
     print(task, os.clock() - clock)
+    collectgarbage 'restart'
 end
 
 local count = 1000000
