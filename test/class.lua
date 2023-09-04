@@ -54,3 +54,45 @@ local d = class.new 'D' (1, 2, 3)
 assert(d.x == 1)
 assert(d.y == 2)
 assert(d.z == 3)
+
+print('功能测试通过')
+
+---------------- 性能测试 ----------------
+local function test(task, callback)
+    local clock = os.clock()
+    callback()
+    print(task, os.clock() - clock)
+end
+
+local count = 1000000
+
+test('只创建表', function ()
+    for _ = 1, count do
+        local t = {}
+    end
+end)
+
+test('创建表并设置元表', function ()
+    local mt = {}
+    for _ = 1, count do
+        local t = setmetatable({}, mt)
+    end
+end)
+
+test('创建A', function ()
+    for _ = 1, count do
+        local t = class.new 'A' ()
+    end
+end)
+
+test('创建C', function ()
+    for _ = 1, count do
+        local t = class.new 'C' (1, 2, 3)
+    end
+end)
+
+test('创建D', function ()
+    for _ = 1, count do
+        local t = class.new 'D' (1, 2, 3)
+    end
+end)

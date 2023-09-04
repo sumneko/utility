@@ -17,6 +17,20 @@
             "outputCapture": [
                 "print"
             ]
+        },
+        {
+            "type": "lua",
+            "request": "launch",
+            "name": "class",
+            "stopOnEntry": false,
+            "program": "${workspaceFolder}/test/class.lua",
+            "cpath": "${workspaceFolder}/bin/?.dll",
+            "luaVersion": "5.4",
+            "luaArch": "x86_64",
+            "internalConsoleOptions": "openOnSessionStart",
+            "outputCapture": [
+                "print"
+            ]
         }
     ]
 }

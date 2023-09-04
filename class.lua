@@ -26,6 +26,7 @@ M._errorHandler = error
 ---@field private superCache   table<string, fun(...)>
 ---@field package superClass?  Class.Base
 ---@field public  getter       table<any, fun(obj: any)>
+---@field package initCalls?   false|fun(...)[]
 local Config = {}
 
 ---@param name string
@@ -190,22 +191,47 @@ end
 ---@param name string
 ---@param ... any
 function M.runInit(obj, name, ...)
-    local class = M._classes[name]
     local data  = M.getConfig(name)
-    local extendsCalls = data.extendsCalls
-    if extendsCalls then
-        for _, call in ipairs(extendsCalls) do
-            if call.init then
-                call.init(obj, function (...)
-                    M.runInit(obj, call.name, ...)
-                end, ...)
-            else
-                M.runInit(obj, call.name)
+    if data.initCalls == false then
+        return
+    end
+    if not data.initCalls then
+        local initCalls = {}
+
+        local function collectInitCalls(cname)
+            local class = M._classes[cname]
+            local cdata  = M.getConfig(cname)
+            local extendsCalls = cdata.extendsCalls
+            if extendsCalls then
+                for _, call in ipairs(extendsCalls) do
+                    if call.init then
+                        initCalls[#initCalls+1] = function (cobj, ...)
+                            call.init(cobj, function (...)
+                                M.runInit(cobj, call.name, ...)
+                            end, ...)
+                        end
+                    else
+                        collectInitCalls(call.name)
+                    end
+                end
+            end
+            if class.__init then
+                initCalls[#initCalls+1] = class.__init
             end
         end
+
+        collectInitCalls(name)
+
+        if #initCalls == 0 then
+            data.initCalls = false
+            return
+        else
+            data.initCalls = initCalls
+        end
     end
-    if class.__init then
-        class.__init(obj, ...)
+
+    for i = 1, #data.initCalls do
+        data.initCalls[i](obj, ...)
     end
 end
 
