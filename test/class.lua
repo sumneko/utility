@@ -55,6 +55,70 @@ assert(d.x == 1)
 assert(d.y == 2)
 assert(d.z == 3)
 
+---@class E: Class.Base
+local E = class.declare 'E'
+
+function E.__getter:x()
+    return 1
+end
+
+local e = class.new 'E' ()
+
+assert(e.x == 1)
+
+---@class F: E
+local F = class.declare('F', 'E')
+
+function F.__getter:y()
+    return 2
+end
+
+local f = class.new 'F' ()
+
+assert(f.x == 1)
+assert(f.y == 2)
+
+---@class G: Class.Base
+local G = class.declare 'G'
+
+function G.__getter:x()
+    return 1
+end
+
+---@class H: G
+local H = class.declare 'H'
+
+class.extends('H', 'G')
+
+function H.__getter:y()
+    return 2
+end
+
+local h = class.new 'H' ()
+
+assert(h.x == 1)
+assert(h.y == 2)
+
+---@class I
+local I = class.declare 'I'
+
+I.x = 1
+
+local i = class.new 'I' ()
+
+assert(i.x == 1)
+
+---@class J: I
+local J = class.declare('J', 'I')
+
+J.x = 2
+
+local j = class.new 'J' ()
+
+assert(j.x == 2)
+
+
+
 ---@class IA
 local IA = class.declare 'IA'
 
@@ -102,6 +166,8 @@ test('只创建表', function ()
     for _ = 1, count do
         local t = {
             x = 1,
+            y = 2,
+            z = 3,
         }
     end
 end)
@@ -111,6 +177,8 @@ test('创建表并设置元表', function ()
     for _ = 1, count do
         local t = setmetatable({
             x = 1,
+            y = 2,
+            z = 3,
         }, mt)
     end
 end)
@@ -136,7 +204,9 @@ end)
 test('创建IA', function ()
     for _ = 1, count do
         local t = class.new('IA', {
-            x = 2,
+            x = 1,
+            y = 2,
+            z = 3,
         })
     end
 end)
@@ -144,7 +214,9 @@ end)
 test('创建IB', function ()
     for _ = 1, count do
         local t = class.new('IB', {
-            z = 4,
+            x = 1,
+            y = 2,
+            z = 3,
         })
     end
 end)
