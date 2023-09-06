@@ -67,7 +67,9 @@ function M.declare(name, super)
         if f then
             return f(self)
         else
-            return class[k]
+            local r = class[k]
+            class[k] = r
+            return r
         end
     end
 
