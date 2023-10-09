@@ -1,16 +1,22 @@
 local type         = type
 local pairs        = pairs
+local error        = error
+local tostring     = tostring
 local mathType     = math.type
 local stringPack   = string.pack
 local stringUnpack = string.unpack
 local stringSub    = string.sub
+local tableSort    = table.sort
+local tableConcat  = table.concat
 
 ---@class Serialization
 local M = {}
 
 local Number  = 'N'
-local Int8    = 'I'
-local Int64   = 'J'
+local UInt8   = 'I'
+local UInt16  = 'J'
+local UInt32  = 'K'
+local Int64   = 'L'
 local String  = 'S'
 local True    = 'T'
 local False   = 'F'
@@ -30,6 +36,9 @@ local Custom  = 'C' -- 自定义数据
 ---@param hook? fun(value: table): Serialization.SupportTypes | nil
 ---@return string
 function M.encode(data, hook)
+    if data == nil then
+        return ''
+    end
     local buf = {}
     local refid = 0
     local tableMap = {}
@@ -37,17 +46,26 @@ function M.encode(data, hook)
     local function encode(value, disableHook)
         local ref = tableMap[value]
         if ref then
-            buf[#buf+1] = Ref.. stringPack('I4', ref)
+            buf[#buf+1] = Ref
+            encode(ref)
             return
         end
         local tp = type(value)
         if tp == 'number' then
             if mathType(value) == 'integer' then
-                if value >= 0 and value <= 255 then
-                    buf[#buf+1] = Int8 .. stringPack('H', value)
-                else
-                    buf[#buf+1] = Int64 .. stringPack('j', value)
+                if value >= 0 then
+                    if value <= 255 then
+                        buf[#buf+1] = UInt8 .. stringPack('I1', value)
+                        return
+                    elseif value <= 65535 then
+                        buf[#buf+1] = UInt16 .. stringPack('I2', value)
+                        return
+                    elseif value <= 4294967295 then
+                        buf[#buf+1] = UInt32 .. stringPack('I4', value)
+                        return
+                    end
                 end
+                buf[#buf+1] = Int64 .. stringPack('j', value)
             else
                 buf[#buf+1] = Number .. stringPack('n', value)
             end
@@ -78,12 +96,14 @@ function M.encode(data, hook)
                 encode(v)
             end
             buf[#buf+1] = TableE
+        else
+            error('不支持的类型！' .. tostring(tp))
         end
     end
 
     encode(data)
 
-    return table.concat(buf)
+    return tableConcat(buf)
 end
 
 -- 反序列化二进制数据为Lua值
@@ -106,8 +126,14 @@ function M.decode(str, hook)
         if tp == Number then
             value, index = stringUnpack('n', str, index)
             return value
-        elseif tp == Int8 then
-            value, index = stringUnpack('H', str, index)
+        elseif tp == UInt8 then
+            value, index = stringUnpack('I1', str, index)
+            return value
+        elseif tp == UInt16 then
+            value, index = stringUnpack('I2', str, index)
+            return value
+        elseif tp == UInt32 then
+            value, index = stringUnpack('I4', str, index)
             return value
         elseif tp == Int64 then
             value, index = stringUnpack('j', str, index)
@@ -125,15 +151,18 @@ function M.decode(str, hook)
             tableMap[tid] = value
             while true do
                 local k = decode()
-                if not k then
+                if k == nil then
                     break
                 end
                 local v = decode()
+                ---@diagnostic disable-next-line: need-check-nil
                 value[k] = v
             end
             return value
+        elseif tp == TableE then
+            return nil
         elseif tp == Ref then
-            value, index = stringUnpack('I4', str, index)
+            value = decode()
             value = tableMap[value]
             return value
         elseif tp == Custom then
@@ -142,6 +171,8 @@ function M.decode(str, hook)
             ---@cast value -?
             value = hook(value)
             return value
+        else
+            error('未知类型！' .. tostring(tp))
         end
     end
 

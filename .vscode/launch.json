@@ -12,6 +12,7 @@
             "program": "${workspaceFolder}/test.lua",
             "cpath": "${workspaceFolder}/bin/?.dll",
             "luaArch": "x86_64",
+            "console": "internalConsole",
             "internalConsoleOptions": "openOnSessionStart",
             "outputCapture": [
                 "print"

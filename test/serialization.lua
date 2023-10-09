@@ -16,10 +16,41 @@ test(false)
 test({1, 2, 3})
 test({x = 1, y = 2, z = 3})
 test({x = 1, y = 2, z = 3, 10000, -1})
+test({
+    x = {
+        1, 2, 3
+    },
+    y = {
+        4, 5, 6
+    }
+})
+test({
+    x = {
+        x1 = {
+            1, 2, 3
+        },
+        x2 = {
+            1, 2, 3
+        }
+    },
+    y = {
+        y1 = {
+            1, 2, 3
+        },
+        y2 = {
+            1, 2, 3
+        }
+    }
+})
 
 local t = {}
 t.self = t
 test(t)
+
+local largeTable = require 'test.input.mz'
+local clock = os.clock()
+test(largeTable)
+print('序列化耗时：', clock)
 
 test({
     x = {
