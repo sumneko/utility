@@ -15,7 +15,10 @@ test(true)
 test(false)
 test({1, 2, 3})
 test({x = 1, y = 2, z = 3})
+test({x = 1, y = 2, z = 3, 10000, -1})
 
 local t = {}
 t.self = t
 test(t)
+
+print('序列化测试完成')
