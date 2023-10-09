@@ -16,17 +16,30 @@ local True    = 'T'
 local False   = 'F'
 local TableB  = 'B' -- 开始一张表的定义
 local TableE  = 'E' -- 结束一张表的定义
-local TableR  = 'R' -- 复用之前定义的表
+local Ref     = 'R' -- 复用之前定义的字符串或表
+local Custom  = 'C' -- 自定义数据
+
+---@alias Serialization.SupportTypes
+---| number
+---| string
+---| boolean
+---| table
 
 -- 将一个Lua值序列化为二进制数据
----@param data nil | number | string | boolean | table
+---@param data Serialization.SupportTypes | nil
+---@param hook? fun(value: table): Serialization.SupportTypes | nil
 ---@return string
-function M.encode(data)
+function M.encode(data, hook)
     local buf = {}
-    local tid = 0
+    local refid = 0
     local tableMap = {}
 
-    local function encode(value)
+    local function encode(value, disableHook)
+        local ref = tableMap[value]
+        if ref then
+            buf[#buf+1] = Ref.. stringPack('I4', ref)
+            return
+        end
         local tp = type(value)
         if tp == 'number' then
             if mathType(value) == 'integer' then
@@ -39,6 +52,8 @@ function M.encode(data)
                 buf[#buf+1] = Number .. stringPack('n', value)
             end
         elseif tp == 'string' then
+            refid = refid + 1
+            tableMap[value] = refid
             buf[#buf+1] = String .. stringPack('s4', value)
         elseif tp == 'boolean' then
             if value then
@@ -47,19 +62,22 @@ function M.encode(data)
                 buf[#buf+1] = False
             end
         elseif tp == 'table' then
-            local id = tableMap[value]
-            if id then
-                buf[#buf+1] = TableR.. stringPack('I4', id)
-            else
-                tid = tid + 1
-                tableMap[value] = tid
-                buf[#buf+1] = TableB
-                for k, v in pairs(value) do
-                    encode(k)
-                    encode(v)
+            if hook and not disableHook then
+                local newValue = hook(value)
+                if newValue ~= nil then
+                    buf[#buf+1] = Custom
+                    encode(newValue, true)
+                    return
                 end
-                buf[#buf+1] = TableE
             end
+            refid = refid + 1
+            tableMap[value] = refid
+            buf[#buf+1] = TableB
+            for k, v in pairs(value) do
+                encode(k)
+                encode(v)
+            end
+            buf[#buf+1] = TableE
         end
     end
 
@@ -70,8 +88,9 @@ end
 
 -- 反序列化二进制数据为Lua值
 ---@param str string
----@return nil | number | string | boolean | table
-function M.decode(str)
+---@param hook? fun(value: Serialization.SupportTypes): Serialization.SupportTypes | nil
+---@return Serialization.SupportTypes | nil
+function M.decode(str, hook)
     if str == '' then
         return nil
     end
@@ -113,9 +132,15 @@ function M.decode(str)
                 value[k] = v
             end
             return value
-        elseif tp == TableR then
+        elseif tp == Ref then
             value, index = stringUnpack('I4', str, index)
             value = tableMap[value]
+            return value
+        elseif tp == Custom then
+            ---@cast hook -?
+            value = decode()
+            ---@cast value -?
+            value = hook(value)
             return value
         end
     end
