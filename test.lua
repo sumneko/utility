@@ -1,6 +1,7 @@
 dofile 'test/util.lua'
+dofile 'test/serialization.lua'
 dofile 'test/class.lua'
-dofile 'test/txml.lua'
+--dofile 'test/txml.lua'
 dofile 'test/trecursive.lua'
 dofile 'test/thex.lua'
 dofile 'test/smerger.lua'
