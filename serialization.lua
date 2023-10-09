@@ -17,13 +17,19 @@ local UInt8   = 'I'
 local UInt16  = 'J'
 local UInt32  = 'K'
 local Int64   = 'L'
-local String  = 'S'
+local Char1   = 'V'
+local Char2   = 'W'
+local Str8    = 'X'
+local Str16   = 'Y'
+local Str32   = 'Z'
 local True    = 'T'
 local False   = 'F'
 local TableB  = 'B' -- 开始一张表的定义
 local TableE  = 'E' -- 结束一张表的定义
 local Ref     = 'R' -- 复用之前定义的字符串或表
 local Custom  = 'C' -- 自定义数据
+
+local RefStrLen = 4 -- 字符串长度大于此值时保存引用
 
 ---@alias Serialization.SupportTypes
 ---| number
@@ -54,13 +60,13 @@ function M.encode(data, hook)
         if tp == 'number' then
             if mathType(value) == 'integer' then
                 if value >= 0 then
-                    if value <= 255 then
+                    if value < (1 << 8) then
                         buf[#buf+1] = UInt8 .. stringPack('I1', value)
                         return
-                    elseif value <= 65535 then
+                    elseif value < (1 << 16) then
                         buf[#buf+1] = UInt16 .. stringPack('I2', value)
                         return
-                    elseif value <= 4294967295 then
+                    elseif value < (1 << 32) then
                         buf[#buf+1] = UInt32 .. stringPack('I4', value)
                         return
                     end
@@ -70,9 +76,24 @@ function M.encode(data, hook)
                 buf[#buf+1] = Number .. stringPack('n', value)
             end
         elseif tp == 'string' then
-            refid = refid + 1
-            tableMap[value] = refid
-            buf[#buf+1] = String .. stringPack('s4', value)
+            local len = #value
+            if len > RefStrLen then
+                refid = refid + 1
+                tableMap[value] = refid
+            end
+            if len == 1 then
+                buf[#buf+1] = Char1 .. value
+            elseif len == 2 then
+                buf[#buf+1] = Char2 .. value
+            elseif len < (1 << 8) then
+                buf[#buf+1] = Str8 .. stringPack('s1', value)
+            elseif len < (1 << 16) then
+                buf[#buf+1] = Str16 .. stringPack('s2', value)
+            elseif len < (1 << 32) then
+                buf[#buf+1] = Str32 .. stringPack('s4', value)
+            else
+                error('不支持这么长的字符串！')
+            end
         elseif tp == 'boolean' then
             if value then
                 buf[#buf+1] = True
@@ -138,10 +159,42 @@ function M.decode(str, hook)
         elseif tp == Int64 then
             value, index = stringUnpack('j', str, index)
             return value
-        elseif tp == String then
+        elseif tp == Char1 then
+            value = stringSub(str, index, index)
+            index = index + 1
+            if #value > RefStrLen then
+                ref = ref + 1
+                refMap[ref] = value
+            end
+            return value
+        elseif tp == Char2 then
+            value = stringSub(str, index, index + 1)
+            index = index + 2
+            if #value > RefStrLen then
+                ref = ref + 1
+                refMap[ref] = value
+            end
+            return value
+        elseif tp == Str8 then
+            value, index = stringUnpack('s1', str, index)
+            if #value > RefStrLen then
+                ref = ref + 1
+                refMap[ref] = value
+            end
+            return value
+        elseif tp == Str16 then
+            value, index = stringUnpack('s2', str, index)
+            if #value > RefStrLen then
+                ref = ref + 1
+                refMap[ref] = value
+            end
+            return value
+        elseif tp == Str32 then
             value, index = stringUnpack('s4', str, index)
-            ref = ref + 1
-            refMap[ref] = value
+            if #value > RefStrLen then
+                ref = ref + 1
+                refMap[ref] = value
+            end
             return value
         elseif tp == True then
             return true
