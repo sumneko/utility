@@ -115,8 +115,8 @@ function M.decode(str, hook)
         return nil
     end
     local index = 1
-    local tid = 0
-    local tableMap = {}
+    local ref = 0
+    local refMap = {}
 
     local function decode()
         local tp = stringSub(str, index, index)
@@ -140,6 +140,8 @@ function M.decode(str, hook)
             return value
         elseif tp == String then
             value, index = stringUnpack('s4', str, index)
+            ref = ref + 1
+            refMap[ref] = value
             return value
         elseif tp == True then
             return true
@@ -147,14 +149,15 @@ function M.decode(str, hook)
             return false
         elseif tp == TableB then
             value = {}
-            tid = tid + 1
-            tableMap[tid] = value
+            ref = ref + 1
+            refMap[ref] = value
             while true do
                 local k = decode()
                 if k == nil then
                     break
                 end
                 local v = decode()
+                assert(v ~= nil)
                 ---@diagnostic disable-next-line: need-check-nil
                 value[k] = v
             end
@@ -163,7 +166,7 @@ function M.decode(str, hook)
             return nil
         elseif tp == Ref then
             value = decode()
-            value = tableMap[value]
+            value = refMap[value]
             return value
         elseif tp == Custom then
             ---@cast hook -?

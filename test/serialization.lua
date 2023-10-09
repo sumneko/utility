@@ -5,6 +5,7 @@ local function test(t, encodeHook, decodeHook)
     local r = seri.encode(t, encodeHook)
     local nt = seri.decode(r, decodeHook)
     assert(util.equal(t, nt))
+    return r
 end
 
 test(nil)
@@ -42,6 +43,25 @@ test({
         }
     }
 })
+test({
+    maximum = {
+        x = 29.0652008056640625,
+        y = 53.60010147094726562,
+        z = 230,
+    },
+    minimum = {
+        x = -29.00760078430175781,
+        y = -53.45240020751953125,
+        z = 1.41630995273590088,
+    },
+})
+
+local t = {}
+for i = 1, 10000 do
+    t[i] = i * 10
+    t[i * 10000] = i * 100000000
+end
+test(t)
 
 local t = {}
 t.self = t
@@ -49,8 +69,9 @@ test(t)
 
 local largeTable = require 'test.input.mz'
 local clock = os.clock()
-test(largeTable)
-print('序列化耗时：', clock)
+local bin = test(largeTable)
+print('序列化耗时：', os.clock() - clock)
+print('二进制大小：', #bin / 1024 / 1024)
 
 test({
     x = {
