@@ -28,6 +28,7 @@ assert(b.y == 2)
 local C = class.declare('C', 'B')
 
 function C:__init(x, y, z)
+    ---@diagnostic disable-next-line: deprecated
     class.super 'C' (x, y)
     self.z = z
 end

@@ -7,6 +7,7 @@ dofile 'test/thex.lua'
 dofile 'test/smerger.lua'
 dofile 'test/rtable.lua'
 dofile 'test/linked.lua'
+dofile 'test/sandbox.lua'
 
 -- 这个太慢了，最后测试
 --dofile 'test/thex2.lua'

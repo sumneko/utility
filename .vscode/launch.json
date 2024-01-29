@@ -11,6 +11,7 @@
             "stopOnEntry": false,
             "program": "${workspaceFolder}/test.lua",
             "cpath": "${workspaceFolder}/bin/?.dll",
+            "path": "${workspaceFolder}/?.lua;${workspaceFolder}/?/init.lua",
             "luaArch": "x86_64",
             "console": "internalConsole",
             "internalConsoleOptions": "openOnSessionStart",
