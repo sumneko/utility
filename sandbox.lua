@@ -75,7 +75,7 @@ local function make_env()
     env.package = {}
     env.package.config = package.config
     env.package.loaded = {}
-    env.package.preload = package.preload
+    env.package.preload = {}
     env.package.path = '?.lua;?/init.lua'
     env.package.searchers = {}
     env.package.searchpath = package.searchpath
@@ -141,6 +141,18 @@ function M:make_searcher()
 end
 
 ---@private
+function M:make_preload()
+    local preload = self.env.package.preload
+    return function (name)
+        assert(type(preload) == "table", "'package.preload' must be a table")
+        if preload[name] == nil then
+            return ("\n\tno field package.preload['%s']"):format(name)
+        end
+        return preload[name]
+    end
+end
+
+---@private
 function M:make_require(searchers, loaded)
     local env = self.env
     searchers = searchers or env.package.searchers
@@ -186,7 +198,8 @@ function M:init(sandbox_name, prefix_name)
     self.prefix_name = prefix_name
     ---@type table
     self.env = make_env()
-    self.env.package.searchers[1] = self:make_searcher()
+    self.env.package.searchers[1] = self:make_preload()
+    self.env.package.searchers[2] = self:make_searcher()
     self.env.require = self:make_require()
 end
 
