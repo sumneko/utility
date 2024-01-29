@@ -159,7 +159,7 @@ function M.delete(obj)
     obj.__deleted__ = true
     local name = obj.__class__
     if not name then
-        M._errorHandler('can not delete undeclared class')
+        M._errorHandler('can not delete undeclared class : ' .. tostring(obj))
     end
 
     M.runDel(obj, name)
@@ -180,6 +180,9 @@ function M.isValid(obj)
        and not obj.__deleted__
 end
 
+--推荐使用“扩展语义”而不是“继承”语义 。
+--因此不适合使用`super`了。
+---@deprecated
 ---@param name string
 ---@return fun(...)
 function M.super(name)
