@@ -148,6 +148,84 @@ assert(ib.x == 1)
 assert(ib.y == 2)
 assert(ib.z == 4)
 
+--阻止循环引用
+do
+    ---@class AA
+    local AA = class.declare 'AA'
+
+    class.extends('AA', 'AA')
+
+    local suc, err = pcall(function ()
+        class.new 'AA' ()
+    end)
+    assert(suc == false)
+    assert(err and err:find 'circular')
+end
+
+do
+    ---@class AB
+    local AB = class.declare 'AB'
+    ---@class AC
+    local AC = class.declare 'AC'
+
+    class.extends('AB', 'AC')
+    class.extends('AC', 'AB')
+
+    local suc, err = pcall(function ()
+        class.new 'AB' ()
+    end)
+    assert(suc == false)
+    assert(err and err:find 'circular')
+end
+
+-- extends 中 super 只能生效一次
+do
+    ---@class CA
+    local CA = class.declare 'CA'
+
+    CA.x = 0
+
+    function CA:__init()
+        self.x = self.x + 1
+    end
+
+    ---@class CB
+    local CB = class.declare 'CB'
+
+    ---@class CB: CA
+    class.extends('CB', 'CA', function (self, super)
+        assert(self.x == 0)
+        super()
+        assert(self.x == 1)
+        super()
+        assert(self.x == 1)
+    end)
+end
+
+-- 调用 super 返回父类
+do
+    ---@class DA
+    local DA = class.declare 'DA'
+
+    DA.x = 0
+
+    function DA:__init()
+        self.x = self.x + 1
+    end
+
+    ---@class DB
+    local DB = class.declare 'DB'
+
+    ---@class DB: DA
+    class.extends('DB', 'DA', function (self, super)
+        assert(self.x == 0)
+        assert(super() == class.get 'DA')
+        assert(self.x == 1)
+        assert(super() == class.get 'DA')
+        assert(self.x == 1)
+    end)
+end
+
 
 print('功能测试通过')
 
