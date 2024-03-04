@@ -72,6 +72,8 @@ local metatable = {
     end
 }
 
+local metaKV = { __mode = 'kv' }
+
 ---@generic T
 ---@param obj T # 要代理的对象
 ---@param config? Proxy.Config # 配置
@@ -82,7 +84,7 @@ function M.new(obj, config, custom)
 
     if config.recursive then
         if not config._recursiveState then
-            config._recursiveState = {}
+            config._recursiveState = setmetatable({}, metaKV)
         end
         if config._recursiveState[obj] then
             return config._recursiveState[obj]
