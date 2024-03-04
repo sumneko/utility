@@ -78,6 +78,7 @@ local f = class.new 'F' ()
 
 assert(f.x == 1)
 assert(f.y == 2)
+assert(f.__super == class.get 'E')
 
 ---@class G: Class.Base
 local G = class.declare 'G'
