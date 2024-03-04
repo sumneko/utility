@@ -1,5 +1,6 @@
 dofile 'test/util.lua'
 dofile 'test/serialization.lua'
+dofile 'test/proxy.lua'
 dofile 'test/class.lua'
 --dofile 'test/txml.lua'
 dofile 'test/trecursive.lua'
