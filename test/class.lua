@@ -101,6 +101,33 @@ local h = class.new 'H' ()
 assert(h.x == 1)
 assert(h.y == 2)
 
+---@class K: Class.Base
+---@field x number
+local K = class.declare 'K'
+
+function K.__setter:x(v)
+    self.y = v
+end
+
+local k = class.new 'K' ()
+
+k.x = 123
+assert(k.y == 123)
+
+---@class L: K
+local L = class.declare('L', 'K')
+
+function L.__setter:y(v)
+    self.z = v
+    return v + 1
+end
+
+local l = class.new 'L' ()
+
+l.x = 123
+assert(l.y == 124)
+assert(l.z == 123)
+
 ---@class I
 local I = class.declare 'I'
 
