@@ -80,26 +80,35 @@ assert(f.x == 1)
 assert(f.y == 2)
 assert(f.__super == class.get 'E')
 
----@class G: Class.Base
-local G = class.declare 'G'
+do
 
-function G.__getter:x()
-    return 1
+    ---@class G: Class.Base
+    local G = class.declare 'G'
+
+    function G.__getter:x()
+        return 1
+    end
+
+    function G.__getter:echoz()
+        return self.z
+    end
+
+    ---@class H: G
+    local H = class.declare 'H'
+
+    class.extends('H', 'G')
+
+    function H.__getter:y()
+        return 2
+    end
+
+    local h = class.new 'H' ()
+
+    assert(h.x == 1)
+    assert(h.y == 2)
+    h.z = 3
+    assert(h.echoz == 3)
 end
-
----@class H: G
-local H = class.declare 'H'
-
-class.extends('H', 'G')
-
-function H.__getter:y()
-    return 2
-end
-
-local h = class.new 'H' ()
-
-assert(h.x == 1)
-assert(h.y == 2)
 
 ---@class K: Class.Base
 ---@field x number
