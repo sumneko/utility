@@ -295,6 +295,32 @@ do
     assert(eb2.x == 2)
 end
 
+do
+    ---@class FA
+    local FA = class.declare 'FA'
+
+    ---@class FB: FA
+    local FB = class.declare 'FB'
+    class.extends('FB', 'FA')
+
+    ---@class FC: FB
+    local FC = class.declare 'FC'
+    class.extends('FC', 'FB')
+
+    --发生了重载
+    local FA = class.declare 'FA'
+
+    ---@class FB: FA
+    local FB = class.declare 'FB'
+    class.extends('FB', 'FA')
+
+    ---@class FC: FB
+    local FC = class.declare 'FC'
+    class.extends('FC', 'FB')
+
+    class.new 'FC' ()
+end
+
 print('功能测试通过')
 
 ---------------- 性能测试 ----------------

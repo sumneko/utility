@@ -360,31 +360,49 @@ function Config:extends(extendsName, init)
         M._errorHandler(('init must be nil or function'))
     end
     self.extendsMap[extendsName] = true
-    for k, v in pairs(extends) do
-        if (not class[k] or self.extendsKeys[k])
-        and not k:match '^__' then
-            self.extendsKeys[k] = true
-            class[k] = v
+
+    do --复制父类的字段与 getter 和 setter
+        for k, v in pairs(extends) do
+            if (not class[k] or self.extendsKeys[k])
+            and not k:match '^__' then
+                self.extendsKeys[k] = true
+                class[k] = v
+            end
+        end
+        for k, v in pairs(extends.__getter) do
+            if not class.__getter[k]
+            or self.extendsKeys[k] then
+                self.extendsKeys[k] = true
+                class.__getter[k] = v
+            end
+        end
+        for k, v in pairs(extends.__setter) do
+            if not class.__setter[k]
+            or self.extendsKeys[k] then
+                self.extendsKeys[k] = true
+                class.__setter[k] = v
+            end
         end
     end
-    for k, v in pairs(extends.__getter) do
-        if not class.__getter[k]
-        or self.extendsKeys[k] then
-            self.extendsKeys[k] = true
-            class.__getter[k] = v
+
+    do --记录父类的init方法
+        local rewrite
+        for i = 1, #self.extendsCalls do
+            local call = self.extendsCalls[i]
+            if call.name == extendsName then
+                call.init = init
+                rewrite = true
+                break
+            end
+        end
+        if not rewrite then
+            table.insert(self.extendsCalls, {
+                init = init,
+                name = extendsName,
+            })
         end
     end
-    for k, v in pairs(extends.__setter) do
-        if not class.__setter[k]
-        or self.extendsKeys[k] then
-            self.extendsKeys[k] = true
-            class.__setter[k] = v
-        end
-    end
-    table.insert(self.extendsCalls, {
-        init = init,
-        name = extendsName,
-    })
+
     -- 检查是否需要显性初始化
     if not init then
         if not extends.__init then
