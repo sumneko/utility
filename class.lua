@@ -25,6 +25,7 @@ M._errorHandler = error
 ---@field private name         string
 ---@field package extendsMap   table<string, boolean>
 ---@field package extendsCalls Class.Extends.CallData[]
+---@field package extendsKeys  table<string, boolean>
 ---@field private superCache   table<string, fun(...)>
 ---@field package superClass?  Class.Base
 ---@field public  getter       table<any, fun(obj: any)>
@@ -40,6 +41,7 @@ function M.getConfig(name)
             extendsMap   = {},
             superCache   = {},
             extendsCalls = {},
+            extendsKeys  = {},
         }, { __index = Config })
     end
     return M._classConfig[name]
@@ -357,22 +359,26 @@ function Config:extends(extendsName, init)
     if type(init) ~= 'nil' and type(init) ~= 'function' then
         M._errorHandler(('init must be nil or function'))
     end
-    if not self.extendsMap[extendsName] then
-        self.extendsMap[extendsName] = true
-        for k, v in pairs(extends) do
-            if not class[k] and not k:match '^__' then
-                class[k] = v
-            end
+    self.extendsMap[extendsName] = true
+    for k, v in pairs(extends) do
+        if (not class[k] or self.extendsKeys[k])
+        and not k:match '^__' then
+            self.extendsKeys[k] = true
+            class[k] = v
         end
-        for k, v in pairs(extends.__getter) do
-            if not class.__getter[k] then
-                class.__getter[k] = v
-            end
+    end
+    for k, v in pairs(extends.__getter) do
+        if not class.__getter[k]
+        or self.extendsKeys[k] then
+            self.extendsKeys[k] = true
+            class.__getter[k] = v
         end
-        for k, v in pairs(extends.__setter) do
-            if not class.__setter[k] then
-                class.__setter[k] = v
-            end
+    end
+    for k, v in pairs(extends.__setter) do
+        if not class.__setter[k]
+        or self.extendsKeys[k] then
+            self.extendsKeys[k] = true
+            class.__setter[k] = v
         end
     end
     table.insert(self.extendsCalls, {

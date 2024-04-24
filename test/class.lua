@@ -263,6 +263,37 @@ do
     end)
 end
 
+do
+    --测试对重载的支持
+    ---@class EA
+    local EA = class.declare 'EA'
+
+    EA.x = 1
+
+    ---@class EB: EA
+    local EB = class.declare 'EB'
+    class.extends('EB', 'EA')
+
+    local eb1 = class.new 'EB' ()
+
+    assert(eb1.x == 1)
+
+    -- 进行了重载
+    ---@class EA
+    local EA = class.declare 'EA'
+
+    EA.x = 2
+
+    ---@class EB: EA
+    local EB = class.declare 'EB'
+    class.extends('EB', 'EA')
+
+    assert(eb1.x == 2)
+
+    local eb2 = class.new 'EB' ()
+
+    assert(eb2.x == 2)
+end
 
 print('功能测试通过')
 
