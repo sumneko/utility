@@ -321,6 +321,44 @@ do
     class.new 'FC' ()
 end
 
+do
+    class.declare 'GA1'
+    class.declare 'GA2'
+
+    class.declare 'GB1'
+    class.extends('GB1', 'GA1')
+    local gb1 = class.new 'GB1' ()
+    assert(class.isInstanceOf(gb1, 'GA1') == true)
+    assert(class.isInstanceOf(gb1, 'GB1') == true)
+    assert(class.isInstanceOf(gb1, 'GA2') == false)
+
+    class.declare 'GB2'
+    class.extends('GB2', 'GA1')
+    class.extends('GB2', 'GA2')
+    local gb2 = class.new 'GB2' ()
+    assert(class.isInstanceOf(gb2, 'GA1') == true)
+    assert(class.isInstanceOf(gb2, 'GA2') == true)
+    assert(class.isInstanceOf(gb2, 'GB1') == false)
+    assert(class.isInstanceOf(gb2, 'GB2') == true)
+
+    class.declare 'GC1'
+    class.extends('GC1', 'GB1')
+    local gc1 = class.new 'GC1' ()
+    assert(class.isInstanceOf(gc1, 'GA1') == true)
+    assert(class.isInstanceOf(gc1, 'GB1') == true)
+    assert(class.isInstanceOf(gc1, 'GC1') == true)
+    assert(class.isInstanceOf(gc1, 'GA2') == false)
+
+    class.declare 'GC2'
+    class.extends('GC2', 'GB2')
+    local gc2 = class.new 'GC2' ()
+    assert(class.isInstanceOf(gc2, 'GA1') == true)
+    assert(class.isInstanceOf(gc2, 'GA2') == true)
+    assert(class.isInstanceOf(gc2, 'GB2') == true)
+    assert(class.isInstanceOf(gc2, 'GC2') == true)
+    assert(class.isInstanceOf(gc2, 'GB1') == false)
+end
+
 print('功能测试通过')
 
 ---------------- 性能测试 ----------------
