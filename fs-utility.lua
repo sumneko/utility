@@ -1,5 +1,4 @@
 local fs           = require 'bee.filesystem'
-local platform     = require 'bee.platform'
 
 local type         = type
 local ioOpen       = io.open
@@ -13,10 +12,15 @@ local tableSort    = table.sort
 
 _ENV = nil
 
----@class fs-utility
+---@alias fsu.path string|fs.path|fsu.dummyfs
+
+---@class fsu
 local m = {}
 --- 读取文件
----@param path string|fs.path
+---@param path fsu.path
+---@param keepBom? boolean
+---@return string?
+---@return string?
 function m.loadFile(path, keepBom)
     if type(path) ~= 'string' then
         ---@diagnostic disable-next-line: undefined-field
@@ -41,8 +45,10 @@ function m.loadFile(path, keepBom)
 end
 
 --- 写入文件
----@param path any
+---@param path fsu.path
 ---@param content string
+---@return boolean
+---@return string?
 function m.saveFile(path, content)
     if type(path) ~= 'string' then
         ---@diagnostic disable-next-line: undefined-field
@@ -59,6 +65,9 @@ function m.saveFile(path, content)
     end
 end
 
+---@param path fs.path
+---@param base fs.path
+---@return fs.path?
 function m.relative(path, base)
     local sPath = fs.absolute(path):string()
     local sBase = fs.absolute(base):string()
@@ -70,13 +79,19 @@ function m.relative(path, base)
     return nil
 end
 
-local function buildOption(option)
-    option     = option     or {}
-    option.add = option.add or {}
-    option.del = option.del or {}
-    option.mod = option.mod or {}
-    option.err = option.err or {}
-    return option
+---@class fsu.state
+---@field add string[]
+---@field del string[]
+---@field mod string[]
+---@field err string[]
+
+local function buildState(state)
+    state     = state     or {}
+    state.add = state.add or {}
+    state.del = state.del or {}
+    state.mod = state.mod or {}
+    state.err = state.err or {}
+    return state
 end
 
 local function split(str, sep)
@@ -96,15 +111,16 @@ local function split(str, sep)
     return t
 end
 
----@class dummyfs
----@operator div(string|fs.path|dummyfs): dummyfs
+---@class fsu.dummyfs
+---@operator div(string|fs.path|fsu.dummyfs): fsu.dummyfs
 ---@field files table
 local dfs = {}
 dfs.__index = dfs
 dfs.type = 'dummy'
 dfs.path = ''
 
----@return dummyfs
+---@param t { [string]: string }
+---@return fsu.dummyfs
 function m.dummyFS(t)
     return setmetatable({
         files = t or {},
@@ -173,7 +189,7 @@ function dfs:string()
     return self.path
 end
 
----@return fun(): dummyfs?
+---@return fun(): fsu.dummyfs?
 function dfs:listDirectory()
     local dir = self:_open()
     if type(dir) ~= 'table' then
@@ -217,6 +233,8 @@ function dfs:exists()
     return target ~= nil
 end
 
+---@param path? fsu.path
+---@return boolean
 function dfs:createDirectories(path)
     if not path then
         return false
@@ -264,14 +282,14 @@ function dfs:saveFile(path, text)
     return true
 end
 
----@param path   string|fs.path|dummyfs
----@param option table
----@return fs.path|dummyfs?
-local function fsAbsolute(path, option)
+---@param path   string|fs.path|fsu.dummyfs
+---@param state table
+---@return fs.path|fsu.dummyfs?
+local function fsAbsolute(path, state)
     if type(path) == 'string' then
         local suc, res = pcall(fs.path, path)
         if not suc then
-            option.err[#option.err+1] = res
+            state.err[#state.err+1] = res
             return nil
         end
         path = res
@@ -280,28 +298,28 @@ local function fsAbsolute(path, option)
     end
     local suc, res = pcall(fs.absolute, path)
     if not suc then
-        option.err[#option.err+1] = res
+        state.err[#state.err+1] = res
         return nil
     end
     return res
 end
 
-local function fsIsDirectory(path, option)
+local function fsIsDirectory(path)
     if not path then
         return false
     end
     if path.type == 'dummy' then
         return path:isDirectory()
     end
-    ---@cast path -dummyfs
+    ---@cast path -fsu.dummyfs
     local status = fs.symlink_status(path):type()
     return status == 'directory'
 end
 
----@param path fs.path|dummyfs|nil
----@param option table
----@return fun(): fs.path|dummyfs|nil
-local function fsPairs(path, option)
+---@param path fs.path|fsu.dummyfs|nil
+---@param state table
+---@return fun(): fs.path|fsu.dummyfs|nil
+local function fsPairs(path, state)
     if not path then
         return function () end
     end
@@ -310,13 +328,13 @@ local function fsPairs(path, option)
     end
     local suc, res = pcall(fs.pairs, path)
     if not suc then
-        option.err[#option.err+1] = res
+        state.err[#state.err+1] = res
         return function () end
     end
     return res
 end
 
-local function fsRemove(path, option)
+local function fsRemove(path, state)
     if not path then
         return false
     end
@@ -325,12 +343,12 @@ local function fsRemove(path, option)
     end
     local suc, res = pcall(fs.remove, path)
     if not suc then
-        option.err[#option.err+1] = res
+        state.err[#state.err+1] = res
     end
-    option.del[#option.del+1] = path:string()
+    state.del[#state.del+1] = path:string()
 end
 
-local function fsExists(path, option)
+local function fsExists(path, state)
     if not path then
         return false
     end
@@ -339,13 +357,13 @@ local function fsExists(path, option)
     end
     local suc, res = pcall(fs.exists, path)
     if not suc then
-        option.err[#option.err+1] = res
+        state.err[#state.err+1] = res
         return false
     end
     return res
 end
 
-local function fsSave(path, text, option)
+local function fsSave(path, text, state)
     if not path then
         return false
     end
@@ -353,16 +371,16 @@ local function fsSave(path, text, option)
         ---@cast path -fs.path
         local dir = path:_open(-2)
         if not dir then
-            option.err[#option.err+1] = '无法打开:' .. path:string()
+            state.err[#state.err+1] = '无法打开:' .. path:string()
             return false
         end
         local filename = path:_filename()
         if not filename then
-            option.err[#option.err+1] = '无法打开:' .. path:string()
+            state.err[#state.err+1] = '无法打开:' .. path:string()
             return false
         end
         if type(dir[filename]) == 'table' then
-            option.err[#option.err+1] = '无法打开:' .. path:string()
+            state.err[#state.err+1] = '无法打开:' .. path:string()
             return false
         end
         dir[filename] = text
@@ -371,12 +389,12 @@ local function fsSave(path, text, option)
         if suc then
             return true
         end
-        option.err[#option.err+1] = err
+        state.err[#state.err+1] = err
         return false
     end
 end
 
-local function fsLoad(path, option)
+local function fsLoad(path, state)
     if not path then
         return nil
     end
@@ -385,45 +403,45 @@ local function fsLoad(path, option)
         if type(text) == 'string' then
             return text
         else
-            option.err[#option.err+1] = '无法打开:' .. path:string()
+            state.err[#state.err+1] = '无法打开:' .. path:string()
             return nil
         end
     else
-        ---@cast path -dummyfs
+        ---@cast path -fsu.dummyfs
         local text, err = m.loadFile(path)
         if text then
             return text
         else
-            option.err[#option.err+1] = err
+            state.err[#state.err+1] = err
             return nil
         end
     end
 end
 
-local function fsCopy(source, target, option)
+local function fsCopy(source, target, state)
     if not source or not target then
         return
     end
     if source.type == 'dummy' then
         local sourceText = source:_open()
         if not sourceText then
-            option.err[#option.err+1] = '无法打开:' .. source:string()
+            state.err[#state.err+1] = '无法打开:' .. source:string()
             return false
         end
-        return fsSave(target, sourceText, option)
+        return fsSave(target, sourceText, state)
     else
-        ---@cast source -dummyfs
+        ---@cast source -fsu.dummyfs
         if target.type == 'dummy' then
             local sourceText, err = m.loadFile(source)
             if not sourceText then
-                option.err[#option.err+1] = err
+                state.err[#state.err+1] = err
                 return false
             end
-            return fsSave(target, sourceText, option)
+            return fsSave(target, sourceText, state)
         else
             local suc, res = pcall(fs.copy_file, source, target, fs.copy_options.overwrite_existing)
             if not suc then
-                option.err[#option.err+1] = res
+                state.err[#state.err+1] = res
                 return false
             end
         end
@@ -431,91 +449,92 @@ local function fsCopy(source, target, option)
     return true
 end
 
----@param path dummyfs|fs.path
----@param option table
-local function fsCreateDirectories(path, option)
+---@param path fsu.dummyfs|fs.path
+---@param state fsu.state
+---@return boolean
+local function fsCreateDirectories(path, state)
     if not path then
-        return
+        return false
     end
     if path.type == 'dummy' then
         return path:createDirectories()
     end
     local suc, res = pcall(fs.create_directories, path)
     if not suc then
-        option.err[#option.err+1] = res
+        state.err[#state.err+1] = res
         return false
     end
     return true
 end
 
-local function fileRemove(path, option)
+local function fileRemove(path, state)
     if not path then
         return
     end
-    if option.onRemove and option.onRemove(path) == false then
+    if state.onRemove and state.onRemove(path) == false then
         return
     end
-    if fsIsDirectory(path, option) then
-        for child in fsPairs(path, option) do
-            fileRemove(child, option)
+    if fsIsDirectory(path) then
+        for child in fsPairs(path, state) do
+            fileRemove(child, state)
         end
     end
-    if fsRemove(path, option) then
-        option.del[#option.del+1] = path:string()
+    if fsRemove(path, state) then
+        state.del[#state.del+1] = path:string()
     end
 end
 
----@param source fs.path|dummyfs?
----@param target fs.path|dummyfs?
----@param option table
-local function fileCopy(source, target, option)
+---@param source fs.path|fsu.dummyfs?
+---@param target fs.path|fsu.dummyfs?
+---@param state fsu.state
+local function fileCopy(source, target, state)
     if not source or not target then
         return
     end
-    local isDir1   = fsIsDirectory(source, option)
-    local isDir2   = fsIsDirectory(target, option)
-    local isExists = fsExists(target, option)
+    local isDir1   = fsIsDirectory(source)
+    local isDir2   = fsIsDirectory(target)
+    local isExists = fsExists(target, state)
     if isDir1 then
-        if isDir2 or fsCreateDirectories(target, option) then
-            for filePath in fsPairs(source, option) do
+        if isDir2 or fsCreateDirectories(target, state) then
+            for filePath in fsPairs(source, state) do
                 local name = filePath:filename():string()
-                fileCopy(filePath, target / name, option)
+                fileCopy(filePath, target / name, state)
             end
         end
     else
         if isExists and not isDir2 then
-            local buf1 = fsLoad(source, option)
-            local buf2 = fsLoad(target, option)
+            local buf1 = fsLoad(source, state)
+            local buf2 = fsLoad(target, state)
             if buf1 and buf2 then
                 if buf1 ~= buf2 then
-                    if fsCopy(source, target, option) then
-                        option.mod[#option.mod+1] = target:string()
+                    if fsCopy(source, target, state) then
+                        state.mod[#state.mod+1] = target:string()
                     end
                 end
             end
         else
-            if fsCopy(source, target, option) then
-                option.add[#option.add+1] = target:string()
+            if fsCopy(source, target, state) then
+                state.add[#state.add+1] = target:string()
             end
         end
     end
 end
 
----@param source fs.path|dummyfs?
----@param target fs.path|dummyfs?
----@param option table
-local function fileSync(source, target, option)
+---@param source fs.path|fsu.dummyfs?
+---@param target fs.path|fsu.dummyfs?
+---@param state fsu.state
+local function fileSync(source, target, state)
     if not source or not target then
         return
     end
-    local isDir1   = fsIsDirectory(source, option)
-    local isDir2   = fsIsDirectory(target, option)
-    local isExists = fsExists(target, option)
+    local isDir1   = fsIsDirectory(source)
+    local isDir2   = fsIsDirectory(target)
+    local isExists = fsExists(target, state)
     if isDir1 then
         if isDir2 then
             local fileList = m.fileList()
             if type(target) == 'table' then
-                ---@cast target dummyfs
+                ---@cast target fsu.dummyfs
                 for filePath in target:listDirectory() do
                     fileList[filePath] = true
                 end
@@ -525,55 +544,55 @@ local function fileSync(source, target, option)
                     fileList[filePath] = true
                 end
             end
-            for filePath in fsPairs(source, option) do
+            for filePath in fsPairs(source, state) do
                 local name = filePath:filename():string()
                 local targetPath = target / name
-                fileSync(filePath, targetPath, option)
+                fileSync(filePath, targetPath, state)
                 fileList[targetPath] = nil
             end
             for path in pairs(fileList) do
-                fileRemove(path, option)
+                fileRemove(path, state)
             end
         else
             if isExists then
-                fileRemove(target, option)
+                fileRemove(target, state)
             end
-            if fsCreateDirectories(target, option) then
-                for filePath in fsPairs(source, option) do
+            if fsCreateDirectories(target, state) then
+                for filePath in fsPairs(source, state) do
                     local name = filePath:filename():string()
-                    fileCopy(filePath, target / name, option)
+                    fileCopy(filePath, target / name, state)
                 end
             end
         end
     else
         if isDir2 then
-            fileRemove(target, option)
+            fileRemove(target, state)
         end
         if isExists then
-            local buf1 = fsLoad(source, option)
-            local buf2 = fsLoad(target, option)
+            local buf1 = fsLoad(source, state)
+            local buf2 = fsLoad(target, state)
             if buf1 and buf2 then
                 if buf1 ~= buf2 then
-                    if fsCopy(source, target, option) then
-                        option.mod[#option.mod+1] = target:string()
+                    if fsCopy(source, target, state) then
+                        state.mod[#state.mod+1] = target:string()
                     end
                 end
             end
         else
-            if fsCopy(source, target, option) then
-                option.add[#option.add+1] = target:string()
+            if fsCopy(source, target, state) then
+                state.add[#state.add+1] = target:string()
             end
         end
     end
 end
 
 --- 文件列表
-function m.fileList(option)
-    option = option or buildOption(option)
+function m.fileList(state)
+    state = state or buildState(state)
     local keyMap = {}
     local fileList = {}
     local function computeKey(path)
-        path = fsAbsolute(path, option)
+        path = fsAbsolute(path, state)
         if not path then
             return nil
         end
@@ -607,41 +626,43 @@ function m.fileList(option)
 end
 
 --- 删除文件（夹）
-function m.fileRemove(path, option)
-    option = buildOption(option)
-    path = fsAbsolute(path, option)
+function m.fileRemove(path, state)
+    state = buildState(state)
+    path = fsAbsolute(path, state)
 
-    fileRemove(path, option)
+    fileRemove(path, state)
 
-    return option
+    return state
 end
 
 --- 复制文件（夹）
----@param source string|fs.path|dummyfs
----@param target string|fs.path|dummyfs
----@return table
-function m.fileCopy(source, target, option)
-    option = buildOption(option)
-    local fsSource = fsAbsolute(source, option)
-    local fsTarget = fsAbsolute(target, option)
+---@param source fsu.path
+---@param target fsu.path
+---@param state? fsu.state
+---@return fsu.state
+function m.fileCopy(source, target, state)
+    state = buildState(state)
+    local fsSource = fsAbsolute(source, state)
+    local fsTarget = fsAbsolute(target, state)
 
-    fileCopy(fsSource, fsTarget, option)
+    fileCopy(fsSource, fsTarget, state)
 
-    return option
+    return state
 end
 
 --- 同步文件（夹）
----@param source string|fs.path|dummyfs
----@param target string|fs.path|dummyfs
----@return table
-function m.fileSync(source, target, option)
-    option = buildOption(option)
-    local fsSource = fsAbsolute(source, option)
-    local fsTarget = fsAbsolute(target, option)
+---@param source fsu.path
+---@param target fsu.path
+---@param state? fsu.state
+---@return fsu.state
+function m.fileSync(source, target, state)
+    state = buildState(state)
+    local fsSource = fsAbsolute(source, state)
+    local fsTarget = fsAbsolute(target, state)
 
-    fileSync(fsSource, fsTarget, option)
+    fileSync(fsSource, fsTarget, state)
 
-    return option
+    return state
 end
 
 ---@param dir fs.path
