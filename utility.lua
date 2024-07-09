@@ -948,4 +948,36 @@ function m.arrayMerge(a, b)
     return a
 end
 
+---@generic K
+---@param t { [K]: any }
+---@return K[]
+function m.keysOf(t)
+    local keys = {}
+    for k in pairs(t) do
+        keys[#keys+1] = k
+    end
+    return keys
+end
+
+---@generic V
+---@param t { [any]: V }
+---@return V[]
+function m.valuesOf(t)
+    local values = {}
+    for _, v in pairs(t) do
+        values[#values+1] = v
+    end
+    return values
+end
+
+---@param t table
+---@return integer
+function m.countTable(t)
+    local count = 0
+    for _ in pairs(t) do
+        count = count + 1
+    end
+    return count
+end
+
 return m
