@@ -693,21 +693,6 @@ function m.sortCallbackOfIndex(arr)
     end
 end
 
----@param datas any[]
----@param scores integer[]
----@return SortByScoreCallback
-function m.sortCallbackOfScore(datas, scores)
-    local map = {}
-    for i = 1, #datas do
-        local data = datas[i]
-        local score = scores[i]
-        map[data] = score
-    end
-    return function (v)
-        return map[v]
-    end
-end
-
 ---裁剪字符串
 ---@param str string
 ---@param mode? '"left"'|'"right"'
@@ -722,7 +707,10 @@ function m.trim(str, mode)
     return (str:match '^%s*(.-)%s*$')
 end
 
-function m.expandPath(path)
+---@param path string
+---@param env? { [string]: string }
+---@return string
+function m.expandPath(path, env)
     if path:sub(1, 1) == '~' then
         local home = getenv('HOME')
         if not home then -- has to be Windows
@@ -730,7 +718,9 @@ function m.expandPath(path)
         end
         return home .. path:sub(2)
     elseif path:sub(1, 1) == '$' then
-        path = path:gsub('%$([%w_]+)', getenv)
+        path = path:gsub('%$([%w_]+)', function (name)
+            return env and env[name] or getenv(name) or ''
+        end)
         return path
     end
     return path
@@ -866,13 +856,12 @@ function m.multiTable(count, default)
         end })
     end
     for _ = 3, count do
-        local tt = current
         current = setmetatable({}, { __index = function (t, k)
             if k == nil then
                 return nil
             end
-            t[k] = tt
-            return tt
+            t[k] = current
+            return current
         end })
     end
     return current
@@ -994,6 +983,25 @@ function m.countTable(t)
         count = count + 1
     end
     return count
+end
+
+---@param arr any[]
+function m.arrayRemoveDuplicate(arr)
+    local mark = {}
+    local offset = 0
+    local len = #arr
+    for i = 1, len do
+        local v = arr[i]
+        if mark[v] then
+            offset = offset + 1
+        else
+            arr[i - offset] = v
+            mark[v] = true
+        end
+    end
+    for i = len - offset + 1, len do
+        arr[i] = nil
+    end
 end
 
 return m
