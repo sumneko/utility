@@ -56,11 +56,6 @@ dirMT[''] = { __index = function (t, k)
         t[k] = values
         return values
     end
-    if k == 'fields' then
-        local fields = {}
-        t[k] = fields
-        return fields
-    end
     error('Invalid key ' .. tostring(k))
 end }
 dirMT['k'] = { __index = function (t, k)
@@ -73,10 +68,6 @@ dirMT['k'] = { __index = function (t, k)
         local values = setmetatable({}, wk)
         t[k] = values
         return values
-    end
-    if k == 'fields' then
-        t[k] = false
-        return false
     end
     error('Invalid key ' .. tostring(k))
 end }
@@ -91,10 +82,6 @@ dirMT['v'] = { __index = function (t, k)
         t[k] = values
         return values
     end
-    if k == 'fields' then
-        t[k] = false
-        return false
-    end
     error('Invalid key ' .. tostring(k))
 end }
 dirMT['kv'] = { __index = function (t, k)
@@ -108,10 +95,6 @@ dirMT['kv'] = { __index = function (t, k)
         t[k] = values
         return values
     end
-    if k == 'fields' then
-        t[k] = false
-        return false
-    end
     error('Invalid key ' .. tostring(k))
 end }
 
@@ -124,42 +107,6 @@ M.weakMode = ''
 
 ---@private
 ---@param t PathTable.Dir
----@param fields any[]
-function M:_resizeFields(t, fields)
-    for i = 1, 4 do
-        local field = fields[i]
-        local key = field[1]
-        local value = table.remove(field)
-        self:_set(t.childDirs[key], field, 2, value)
-    end
-    for i = 5, 8 do
-        fields[i - 4] = fields[i]
-        fields[i] = nil
-    end
-end
-
----@param field any[]
----@param path any[]
----@param index integer
----@return boolean
-local function isSamePath(field, path, index)
-    local myLen = #field - 1
-    local pathLen = #path - index + 1
-    if myLen ~= pathLen then
-        return false
-    end
-
-    for i = 1, myLen do
-        if field[i] ~= path[index + i - 1] then
-            return false
-        end
-    end
-
-    return true
-end
-
----@private
----@param t PathTable.Dir
 ---@param path any[]
 ---@param index integer
 ---@param value any
@@ -168,26 +115,6 @@ function M:_set(t, path, index, value)
     local isLastKey = index == #path
     if isLastKey then
         t.values[key] = value
-        return
-    end
-
-    -- try fields part
-    local fields = t.fields
-    if fields then
-        if #fields >= 8 then
-            self:_resizeFields(t, fields)
-        end
-        for _, field in ipairs(fields) do
-            if isSamePath(field, path, index) then
-                field[#field] = value
-                return
-            end
-        end
-        -- [path1, path2, path3, value]
-        local field = { table.unpack(path, index) }
-        field[#field+1] = value
-
-        fields[#fields+1] = field
         return
     end
 
@@ -206,17 +133,6 @@ function M:_get(t, path, index)
     if isLastKey then
         local values = rawget(t, 'values')
         return values and values[key] or nil
-    end
-
-    -- try fields part
-    local fields = rawget(t, 'fields')
-    if fields then
-        for _, field in ipairs(fields) do
-            if isSamePath(field, path, index) then
-                local value = field[#field]
-                return value
-            end
-        end
     end
 
     -- try childs part
@@ -244,29 +160,15 @@ function M:_delete(t, path, index)
         return true
     end
 
-    local suc = false
-    -- try fields part
-    local fields = rawget(t, 'fields')
-    if fields then
-        for i, field in ipairs(fields) do
-            if isSamePath(field, path, index) then
-                suc = true
-                fields[i] = fields[#fields]
-                fields[#fields] = nil
-                break
-            end
-        end
-    end
-
-    -- also try childs part
+    -- try childs part
     local childDirs = rawget(t, 'childDirs')
     if childDirs then
         if self:_delete(childDirs[key], path, index + 1) then
-            suc = true
+            return true
         end
     end
 
-    return suc
+    return false
 end
 
 function M:clear()
