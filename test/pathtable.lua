@@ -55,4 +55,51 @@ do
     print(collectgarbage 'count' - m, 'kb')
 end
 
+do
+    local pt = pathTable.create(true, false)
+
+    local strong = {'<STRONG>'}
+    local weak   = {'<WEAK>'}
+
+    local gc = false
+
+    pt:set({1, strong, 2}, true)
+    pt:set({2, weak, 1}, setmetatable({}, { __gc = function ()
+        gc = true
+    end}))
+
+    assert(pt:has({1, strong, 2}) == true)
+    assert(pt:has({2, weak, 1}) == true)
+
+    weak = nil
+
+    collectgarbage()
+
+    assert(pt:has({1, strong, 2}) == true)
+    assert(gc == true)
+end
+
+do
+    local pt = pathTable.create(false, true)
+
+    local strong = {'<STRONG>'}
+    local weak   = {'<WEAK>'}
+
+    pt:set({1, 2, 3}, strong)
+    pt:set({3, 2, 1}, weak)
+
+    assert(pt:has({1, 2, 3}) == true)
+    assert(pt:has({3, 2, 1}) == true)
+
+    weak = nil
+
+    collectgarbage()
+
+    assert(pt:has({1, 2, 3}) == true)
+    assert(pt:has({3, 2, 1}) == false)
+
+    ---@diagnostic disable-next-line: invisible
+    assert(rawget(pt.root.childDirs, 3) == nil)
+end
+
 print('path-table 测试完成')

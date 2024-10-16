@@ -29,7 +29,7 @@ dirChildMT['k'] = {
     end
 }
 dirChildMT['v'] = {
-    __mode = 'v',
+    __mode = '',
     __index = function (t, k)
         local dir = createDir 'v'
         t[k] = dir
@@ -37,7 +37,7 @@ dirChildMT['v'] = {
     end
 }
 dirChildMT['kv'] = {
-    __mode = 'kv',
+    __mode = 'k',
     __index = function (t, k)
         local dir = createDir 'kv'
         t[k] = dir
@@ -132,13 +132,31 @@ function M:_get(t, path, index)
     local isLastKey = index == #path
     if isLastKey then
         local values = rawget(t, 'values')
-        return values and values[key] or nil
+        if not values then
+            return nil
+        end
+        local value = values[key]
+        if value == nil and not next(values) then
+            t.values = nil
+        end
+        return value
     end
 
     -- try childs part
     local childDirs = rawget(t, 'childDirs')
     if childDirs then
-        return self:_get(childDirs[key], path, index + 1)
+        local child = rawget(childDirs, key)
+        if not child then
+            return nil
+        end
+        local value = self:_get(child, path, index + 1)
+        if value == nil and not next(child) then
+            childDirs[key] = nil
+            if not next(childDirs) then
+                t.childDirs = nil
+            end
+        end
+        return value
     end
 
     return nil
@@ -156,6 +174,9 @@ function M:_delete(t, path, index)
         local values = rawget(t, 'values')
         if values then
             values[key] = nil
+            if not next(values) then
+                t.values = nil
+            end
         end
         return true
     end
@@ -164,6 +185,12 @@ function M:_delete(t, path, index)
     local childDirs = rawget(t, 'childDirs')
     if childDirs then
         if self:_delete(childDirs[key], path, index + 1) then
+            if not next(childDirs[key]) then
+                childDirs[key] = nil
+                if not next(childDirs) then
+                    t.childDirs = nil
+                end
+            end
             return true
         end
     end
