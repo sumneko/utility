@@ -1,6 +1,6 @@
 local linkedTable = require 'linked-table'
 
-local lt = linkedTable()
+local lt = linkedTable.create()
 
 lt:pushTail(1)
 lt:pushTail(2)
