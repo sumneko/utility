@@ -102,4 +102,33 @@ do
     assert(rawget(pt.root.childDirs, 3) == nil)
 end
 
+do
+    local pt = pathTable.create(true, true)
+
+    local strong = {'<STRONG>'}
+    local weak   = {'<WEAK>'}
+
+    local gc = false
+
+    pt:set({1, weak, 3}, setmetatable({}, { __gc = function ()
+        gc = true
+    end}))
+    pt:set({1, 2, 3}, weak)
+
+    assert(pt:has({1, weak, 3}) == true)
+    assert(pt:get({1, 2, 3}) == weak)
+
+    weak = nil
+
+    collectgarbage()
+
+    assert(gc == true)
+    assert(pt:has({1, 2, 3}) == false)
+
+    ---@diagnostic disable-next-line: invisible
+    assert(rawget(pt.root.childDirs, 1) == nil)
+    ---@diagnostic disable-next-line: invisible
+    assert(rawget(pt.root.childDirs, 3) == nil)
+end
+
 print('path-table 测试完成')
