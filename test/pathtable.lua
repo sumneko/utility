@@ -105,7 +105,6 @@ end
 do
     local pt = pathTable.create(true, true)
 
-    local strong = {'<STRONG>'}
     local weak   = {'<WEAK>'}
 
     local gc = false
@@ -129,6 +128,31 @@ do
     assert(rawget(pt.root.childDirs, 1) == nil)
     ---@diagnostic disable-next-line: invisible
     assert(rawget(pt.root.childDirs, 3) == nil)
+end
+
+do
+    local pt = pathTable.create(true, true)
+
+    local o1 = {'o1'}
+    local o2 = {'o2'}
+    local pk = {x = o1, y = o2}
+
+    pt:set({o1, o2}, pk)
+
+    o1 = nil
+    o2 = nil
+
+    collectgarbage()
+
+    ---@diagnostic disable-next-line: invisible
+    assert(next(pt.root.childDirs) ~= nil)
+
+    pk = nil
+
+    collectgarbage()
+
+    ---@diagnostic disable-next-line: invisible
+    assert(next(pt.root.childDirs) == nil)
 end
 
 print('path-table 测试完成')
