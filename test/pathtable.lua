@@ -155,4 +155,22 @@ do
     assert(next(pt.root.childDirs) == nil)
 end
 
+do
+    local pt = pathTable.create(false, true)
+
+    local ref = {}
+    for i = 1, 10000 do
+        local o = {i}
+        if i > 9000 then
+            ref[i] = o
+        end
+        pt:set({ 'key1', i, 'key2' }, o)
+    end
+
+    collectgarbage()
+
+    ---@diagnostic disable-next-line: invisible
+    --assert(rawget(pt.root.childDirs['key1'].childDirs, 1) == nil)
+end
+
 print('path-table 测试完成')
