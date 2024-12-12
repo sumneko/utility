@@ -7,7 +7,6 @@ local rawset         = rawset
 local pcall          = pcall
 local tostring       = tostring
 local select         = select
-local stderr         = io.stderr
 local sformat        = string.format
 local getregistry    = debug.getregistry
 local getmetatable   = debug.getmetatable
@@ -23,11 +22,46 @@ local registry       = getregistry()
 local ccreate        = coroutine.create
 local setmetatable   = setmetatable
 local error          = error
-
-_ENV = nil
-
+local multiUserValue = _VERSION == 'Lua 5.4'
 local hasPoint       = pcall(sformat, '%p', _G)
-local multiUserValue = not pcall(getuservalue, stderr, '')
+
+local _private = {}
+
+---@generic T
+---@param o T
+---@return T
+local function private(o)
+    if not o then
+        return nil
+    end
+    _private[o] = true
+    return o
+end
+
+---@class Doctor
+local m = private {}
+
+---@private
+m._ignoreMainThread = true
+
+---@alias Doctor.ToStringLevel 'all' | 'onlylua' | 'none'
+
+---@private
+---@type Doctor.ToStringLevel
+m._toStringTable = 'all'
+
+---@private
+---@type Doctor.ToStringLevel
+m._toStringUserdata = 'all'
+
+---@private
+m._cache = false
+
+---@private
+m._exclude = nil
+
+---@private
+m._lastCache = nil
 
 local function getPoint(obj)
     if hasPoint then
@@ -65,14 +99,29 @@ local function isInteger(obj)
     end
 end
 
-local function getTostring(obj)
+---@param obj table | userdata
+---@param level Doctor.ToStringLevel
+---@return string?
+local function getTostring(obj, level)
     local mt = getmetatable(obj)
     if not mt then
         return nil
     end
+    local name = rawget(mt, '__name')
+    if type(name) ~= 'string' then
+        name = nil
+    end
+    if level == 'none' then
+        return name
+    end
     local toString = rawget(mt, '__tostring')
     if not toString then
         return nil
+    end
+    if level == 'onlylua' then
+        if getinfo(toString, 'S').what == 'C' then
+            return name
+        end
     end
     local suc, str = pcall(toString, obj)
     if not suc then
@@ -80,6 +129,9 @@ local function getTostring(obj)
     end
     if type(str) ~= 'string' then
         return nil
+    end
+    if #str > 100 then
+        str = str:sub(1, 100) .. '...(len=' .. #str .. ')'
     end
     return str
 end
@@ -117,15 +169,16 @@ local function formatName(obj)
         return 'string:' .. str
     elseif tp == 'function' then
         local info = getinfo(obj, 'S')
-        if info.what == 'c' then
-            return formatObject(obj, 'function', 'C')
+        if info.what == 'C' then
+            return formatObject(obj, 'function', '=[C]')
         elseif info.what == 'main' then
             return formatObject(obj, 'function', 'main')
         else
             return formatObject(obj, 'function', ('%s:%d-%d'):format(info.source, info.linedefined, info.lastlinedefined))
         end
     elseif tp == 'table' then
-        local id = getTostring(obj)
+        local id = getTostring(obj, m._toStringTable)
+                or rawget(obj, '__class__')
         if not id then
             if obj == _G then
                 id = '_G'
@@ -139,7 +192,7 @@ local function formatName(obj)
             return formatObject(obj, 'table')
         end
     elseif tp == 'userdata' then
-        local id = getTostring(obj)
+        local id = getTostring(obj, m._toStringUserdata)
         if id then
             return formatObject(obj, 'userdata', id)
         else
@@ -149,34 +202,6 @@ local function formatName(obj)
         return formatObject(obj, tp)
     end
 end
-
-local _private = {}
-
----@generic T
----@param o T
----@return T
-local function private(o)
-    if not o then
-        return nil
-    end
-    _private[o] = true
-    return o
-end
-
----@class Doctor
-local m = private {}
-
----@private
-m._ignoreMainThread = true
-
----@private
-m._cache = false
-
----@private
-m._exclude = nil
-
----@private
-m._lastCache = nil
 
 --- 获取内存快照，生成一个内部数据结构。
 --- 一般不用这个API，改用 report 或 catch。
@@ -208,6 +233,27 @@ m.snapshot = private(function ()
     local find
     local mark = private {}
 
+    local originFormatName = formatName
+    local formatCache = private {}
+
+    local function formatName(obj)
+        if obj == nil then
+            return originFormatName(obj)
+        end
+        if not formatCache[obj] then
+            formatCache[obj] = originFormatName(obj)
+        end
+        return formatCache[obj]
+    end
+
+    local function isGCObject(v)
+        local tp = type(v)
+        return tp == 'table'
+            or tp == 'userdata'
+            or tp == 'function'
+            or tp == 'thread'
+    end
+
     local function findTable(t, result)
         result = result or {}
         local mt = getmetatable(t)
@@ -227,7 +273,7 @@ m.snapshot = private(function ()
             if not wk then
                 local keyInfo = find(k)
                 if keyInfo then
-                    if wv then
+                    if wv and isGCObject(v) then
                         find(v)
                         local valueResults = mark[v]
                         if valueResults then
@@ -249,7 +295,7 @@ m.snapshot = private(function ()
             if not wv then
                 local valueInfo = find(v)
                 if valueInfo then
-                    if wk then
+                    if wk and isGCObject(k) then
                         find(k)
                         local keyResults = mark[k]
                         if keyResults then
@@ -273,7 +319,7 @@ m.snapshot = private(function ()
         if MTInfo then
             result[#result+1] = private {
                 type = 'metatable',
-                name = '',
+                name = formatName(getmetatable(t)),
                 info = MTInfo,
             }
         end
@@ -320,7 +366,7 @@ m.snapshot = private(function ()
         if MTInfo then
             result[#result+1] = private {
                 type = 'metatable',
-                name = '',
+                name = formatName(getmetatable(u)),
                 info = MTInfo,
             }
         end
@@ -414,7 +460,16 @@ m.snapshot = private(function ()
         return result
     end
 
+    local stringInfo = private {
+        count = 0,
+        totalSize = 0,
+        largeStrings = private {},
+    }
+
     function find(obj)
+        if obj == nil then
+            return nil
+        end
         if mark[obj] then
             return mark[obj]
         end
@@ -434,6 +489,12 @@ m.snapshot = private(function ()
         elseif tp == 'thread' then
             mark[obj] = private {}
             mark[obj] = findThread(obj, mark[obj])
+        elseif tp == 'string' then
+            stringInfo.count = stringInfo.count + 1
+            stringInfo.totalSize = stringInfo.totalSize + #obj
+            if #obj >= 10000 then
+                stringInfo.largeStrings[#stringInfo.largeStrings+1] = obj
+            end
         else
             return nil
         end
@@ -444,20 +505,20 @@ m.snapshot = private(function ()
     end
 
     -- TODO: Lua 5.1中，主线程与_G都不在注册表里
-    local result = private {
+    local root = private {
         name = formatName(registry),
         type = 'root',
         info = find(registry),
     }
     if not registry[1] then
-        result.info[#result.info+1] = private {
+        root.info[#root.info+1] = private {
             type = 'thread',
             name = 'main',
             info = findMainThread(),
         }
     end
     if not registry[2] then
-        result.info[#result.info+1] = private {
+        root.info[#root.info+1] = private {
             type = '_G',
             name = '_G',
             info = find(_G),
@@ -471,12 +532,16 @@ m.snapshot = private(function ()
         ['function']  = getmetatable(function () end),
         ['thread']    = getmetatable(ccreate(function () end)),
     } do
-        result.info[#result.info+1] = private {
+        root.info[#root.info+1] = private {
             type = 'metatable',
             name = name,
             info = find(mt),
         }
     end
+    local result = {
+        root = root,
+        stringInfo = stringInfo,
+    }
     if m._cache then
         m._lastCache = result
     end
@@ -552,22 +617,23 @@ m.catch = private(function (...)
         end
     end
 
-    search(report)
+    search(report.root)
 
     return result
 end)
 
----@alias Doctor.Report {point: string, count: integer, name: string, childs: integer}
+---@alias Doctor.Report { point: string, count: integer, name: string, childs: integer }
+---@alias Doctor.StringInfo { count: integer, totalSize: integer, largeStrings: string[] }
 
 --- 生成一个内存快照的报告。
 --- 你应当将其输出到一个文件里再查看。
----@return Doctor.Report[]
+---@return { report: Doctor.Report[], stringInfo: Doctor.StringInfo }
 m.report = private(function ()
     local snapshot = m.snapshot()
     local cache = {}
     local mark = {}
 
-    local function scan(t)
+    local function scanRoot(t)
         local obj = t.info.object
         local tp = type(obj)
         if tp == 'table'
@@ -589,17 +655,20 @@ m.report = private(function ()
         if not mark[t.info] then
             mark[t.info] = true
             for _, child in ipairs(t.info) do
-                scan(child)
+                scanRoot(child)
             end
         end
     end
 
-    scan(snapshot)
+    scanRoot(snapshot.root)
     local list = {}
     for _, info in pairs(cache) do
         list[#list+1] = info
     end
-    return list
+    return {
+        report = list,
+        stringInfo = snapshot.stringInfo,
+    }
 end)
 
 --- 在进行快照相关操作时排除掉的对象。
@@ -615,10 +684,10 @@ end)
 m.compare = private(function (old, new)
     local newHash = {}
     local ret = {}
-    for _, info in ipairs(new) do
+    for _, info in ipairs(new.root) do
         newHash[info.point] = info
     end
-    for _, info in ipairs(old) do
+    for _, info in ipairs(old.root) do
         if newHash[info.point] then
             ret[#ret + 1] = {
                 old = info,
@@ -633,6 +702,14 @@ end)
 ---@param flag boolean
 m.ignoreMainThread = private(function (flag)
     m._ignoreMainThread = flag
+end)
+
+--- 是否对表或者userdata进行 tostring（调用它们的 __tostring 元方法）
+---@param toStringTable Doctor.ToStringLevel
+---@param toStringUserdata Doctor.ToStringLevel
+m.toString = private(function (toStringTable, toStringUserdata)
+    m._toStringTable = toStringTable
+    m._toStringUserdata = toStringUserdata
 end)
 
 --- 是否启用缓存，启用后会始终使用第一次查找的结果，
