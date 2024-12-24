@@ -1,12 +1,12 @@
 local type         = type
-local next         = next
+local pairs        = pairs
 local error        = error
 local tostring     = tostring
 local mathType     = math.type
 local stringPack   = string.pack
 local stringUnpack = string.unpack
 local stringSub    = string.sub
-local stringFind   = string.find
+local tableSort    = table.sort
 local tableConcat  = table.concat
 
 ---@class Serialization
@@ -19,7 +19,6 @@ local UInt32  = 'K'
 local Int64   = 'L'
 local Char1   = 'V'
 local Char2   = 'W'
-local String  = 'S' -- 以 \0 结尾的字符串
 local Str8    = 'X'
 local Str16   = 'Y'
 local Str32   = 'Z'
@@ -102,8 +101,6 @@ function M.encode(data, hook, ignoreUnknownType)
                 buf[#buf+1] = Char1 .. value
             elseif len == 2 then
                 buf[#buf+1] = Char2 .. value
-            elseif not stringFind(value, '\0', 1, true) then
-                buf[#buf+1] = String .. value .. '\0'
             elseif len < (1 << 8) then
                 buf[#buf+1] = Str8 .. stringPack('s1', value)
             elseif len < (1 << 16) then
@@ -193,13 +190,6 @@ function M.decode(str, hook)
             return value
         elseif tp == Int64 then
             value, index = stringUnpack('j', str, index)
-            return value
-        elseif tp == String then
-            value, index = stringUnpack('z', str, index)
-            if #value > RefStrLen then
-                ref = ref + 1
-                refMap[ref] = value
-            end
             return value
         elseif tp == Char1 then
             value = stringSub(str, index, index)
