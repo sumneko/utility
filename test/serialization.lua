@@ -58,6 +58,15 @@ test({
     },
 })
 
+test({ 1, 2, nil, 3, 4, 5, 6, 7, 8 })
+do
+    local t = {1, 2, 3, 4, 5, 6, 7, 8}
+    for i = 1, 5 do
+        t[i] = nil
+    end
+    test(t)
+end
+
 local t = {}
 for i = 1, 10000 do
     t[i] = i * 10
