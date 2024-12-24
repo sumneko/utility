@@ -2,10 +2,12 @@ local seri = require 'serialization'
 local util = require 'utility'
 
 local function test(t, encodeHook, decodeHook)
+    local c = os.clock()
     local r = seri.encode(t, encodeHook)
     local nt = seri.decode(r, decodeHook)
+    local p = os.clock() - c
     assert(util.equal(t, nt))
-    return r
+    return r, p
 end
 
 test(nil)
@@ -68,10 +70,9 @@ t.self = t
 test(t)
 
 local largeTable = require 'test.input.mz'
-local clock = os.clock()
-local bin = test(largeTable)
-print('序列化耗时：', os.clock() - clock)
-print('二进制大小：', #bin / 1024 / 1024)
+local bin, p = test(largeTable)
+print('序列化+反序列化耗时：', p)
+print('二进制大小：', #bin / 1024 / 1024, 'MB')
 
 test({
     x = {
