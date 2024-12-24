@@ -6,6 +6,10 @@ local M = {}
 M._classes = {}
 
 ---@private
+---@type table<string, function>
+M._alias = {}
+
+---@private
 ---@type table<string, Class.Config>
 M._classConfig = {}
 
@@ -126,6 +130,14 @@ function M.declare(name, super, superInit)
         end
     end
 
+    function class:__encode()
+        return self
+    end
+
+    function class:__decode(value)
+        return M.new(name, value)
+    end
+
     function class:__call(...)
         M.runInit(self, name, ...)
         return self
@@ -170,6 +182,13 @@ function M.get(name)
     return M._classes[name]
 end
 
+---为一个已有的构造函数创建类型别名
+---@param name string
+---@param creator function
+function M.alias(name, creator)
+    M._alias[name] = creator
+end
+
 -- 实例化一个类
 ---@generic T: string
 ---@param name `T`
@@ -178,6 +197,14 @@ end
 function M.new(name, tbl)
     local class = M._classes[name]
     if not class then
+        local aliasCreator = M._alias[name]
+        if aliasCreator then
+            return function (...)
+                local instance = aliasCreator(...)
+                instance.__class__ = name
+                return instance
+            end
+        end
         M._errorHandler(('class %q not found'):format(name))
     end
 
@@ -310,6 +337,9 @@ end
 ---@param name string
 function M.runDel(obj, name)
     local class = M._classes[name]
+    if not class then
+        return
+    end
     local data  = M.getConfig(name)
     local extendsCalls = data.extendsCalls
     if extendsCalls then
