@@ -1,12 +1,10 @@
 local type         = type
-local pairs        = pairs
 local error        = error
 local tostring     = tostring
 local mathType     = math.type
 local stringPack   = string.pack
 local stringUnpack = string.unpack
 local stringSub    = string.sub
-local tableSort    = table.sort
 local tableConcat  = table.concat
 
 ---@class Serialization
