@@ -1,9 +1,11 @@
 ---@class Proxy
 local M = {}
 
-local RAW       = {'<RAW>'}
 local CONFIG    = {'<CONFIG>'}
 local CUSTOM    = {'<CUSTOM>'}
+local RECUSIVE  = {'<RECUSIVE>'}
+
+local rawMap = setmetatable({}, { __mode = 'k' })
 
 ---@alias Proxy.Setter fun(self: table, raw: any, key: any, value: any, config: Proxy.Config, custom: any): any
 ---@alias Proxy.Getter fun(self: table, raw: any, key: any, config: Proxy.Config, custom: any): any
@@ -16,14 +18,34 @@ local CUSTOM    = {'<CUSTOM>'}
 ---@field getter? { [any]: Proxy.Getter }
 ---@field anySetter? Proxy.Setter # 只有没有对应的 `setter` 才会触发 `anySetter`
 ---@field anyGetter? Proxy.Getter # 只有没有对应的 `getter` 才会触发 `anyGetter`
----@field package _recursiveState? table
 local defaultConfig = {
     cache     = true,
 }
 
-local metatable = {
+local metatable
+
+local function getRecusiveProxy(value, config, custom, recursive)
+    value = rawMap[value] or value
+    local proxy = recursive[value]
+    if proxy then
+        return proxy
+    end
+    if type(value) ~= 'table' and type(value) ~= 'userdata' then
+        return value
+    end
+    proxy = setmetatable({
+        [CONFIG]   = config,
+        [CUSTOM]   = custom,
+        [RECUSIVE] = recursive,
+    }, metatable)
+    recursive[value] = proxy
+    rawMap[proxy] = value
+    return proxy
+end
+
+metatable = {
     __newindex = function (self, key, value)
-        local raw    = rawget(self, RAW)
+        local raw    = rawMap[self]
         ---@type Proxy.Config
         local config = rawget(self, CONFIG)
         local custom = rawget(self, CUSTOM)
@@ -44,10 +66,11 @@ local metatable = {
         end
     end,
     __index = function (self, key)
-        local raw    = rawget(self, RAW)
+        local raw    = rawMap[self]
         ---@type Proxy.Config
         local config = rawget(self, CONFIG)
         local custom = rawget(self, CUSTOM)
+        local recursive = rawget(self, RECUSIVE)
         local getter = config.getter and config.getter[key]
         local value
         if getter then
@@ -57,26 +80,32 @@ local metatable = {
         else
             value = raw[key]
         end
+
         if config.cache then
             rawset(self, key, value)
         end
+
+        if recursive then
+            value = getRecusiveProxy(value, config, custom, recursive)
+        end
+
         return value
     end,
     __pairs = function (self)
-        local raw = rawget(self, RAW)
+        local raw = rawMap[self]
         local t = {}
         for k in pairs(raw) do
             t[k] = self[k]
         end
         for k in next, self do
-            if k ~= RAW and k ~= CONFIG and k ~= CUSTOM then
+            if k ~= CONFIG and k ~= CUSTOM and k ~= RECUSIVE then
                 t[k] = self[k]
             end
         end
         return next, t, nil
     end,
     __len = function (self)
-        local raw = rawget(self, RAW)
+        local raw = rawMap[self]
         return #raw
     end
 }
@@ -95,24 +124,19 @@ function M.new(obj, config, custom)
     end
     config = config or defaultConfig
 
-    if config.recursive then
-        if not config._recursiveState then
-            config._recursiveState = setmetatable({}, metaKV)
-        end
-        if config._recursiveState[obj] then
-            return config._recursiveState[obj]
-        end
-    end
-
-    local proxy = setmetatable({
-        [RAW]    = obj,
+    local proxy = {
         [CONFIG] = config,
         [CUSTOM] = custom,
-    }, metatable)
+    }
 
     if config.recursive then
-        config._recursiveState[obj] = proxy
+        local recursive = setmetatable({}, metaKV)
+        proxy[RECUSIVE] = recursive
+        recursive[obj] = proxy
     end
+
+    setmetatable(proxy, metatable)
+    rawMap[proxy] = obj
 
     return proxy
 end
@@ -120,13 +144,13 @@ end
 ---@param proxyObj table
 ---@return any
 function M.raw(proxyObj)
-    return proxyObj[RAW]
+    return rawMap[proxyObj] or proxyObj
 end
 
 ---@param proxyObj table
 ---@return any
 function M.rawRecusive(proxyObj)
-    local obj = proxyObj[RAW] or proxyObj
+    local obj = rawMap[proxyObj] or proxyObj
     for k, v in pairs(obj) do
         if type(v) == 'table' then
             obj[k] = M.rawRecusive(v)
