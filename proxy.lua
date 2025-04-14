@@ -64,7 +64,16 @@ local metatable = {
     end,
     __pairs = function (self)
         local raw = rawget(self, RAW)
-        return pairs(raw)
+        local t = {}
+        for k in pairs(raw) do
+            t[k] = self[k]
+        end
+        for k in next, self do
+            if k ~= RAW and k ~= CONFIG and k ~= CUSTOM then
+                t[k] = self[k]
+            end
+        end
+        return next, t, nil
     end,
     __len = function (self)
         local raw = rawget(self, RAW)
@@ -80,6 +89,10 @@ local metaKV = { __mode = 'kv' }
 ---@param custom? any # 自定义数据
 ---@return T
 function M.new(obj, config, custom)
+    local tp = type(obj)
+    if tp ~= 'table' and tp ~= 'userdata' then
+        error('只有table和userdata可以被代理')
+    end
     config = config or defaultConfig
 
     if config.recursive then
@@ -108,6 +121,18 @@ end
 ---@return any
 function M.raw(proxyObj)
     return proxyObj[RAW]
+end
+
+---@param proxyObj table
+---@return any
+function M.rawRecusive(proxyObj)
+    local obj = proxyObj[RAW] or proxyObj
+    for k, v in pairs(obj) do
+        if type(v) == 'table' then
+            obj[k] = M.rawRecusive(v)
+        end
+    end
+    return obj
 end
 
 ---@param proxyObj table
