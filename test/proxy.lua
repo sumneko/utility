@@ -50,7 +50,88 @@ do
 end
 
 do
-    
+    local t = {
+        x = {
+            a = {
+                l = 1,
+                m = 2,
+                n = 3,
+            },
+            b = {
+                l = 1,
+                m = 2,
+                n = 3,
+            },
+            c = {
+                l = 1,
+                m = 2,
+                n = 3,
+            },
+        },
+        y = {
+            a = {
+                l = 1,
+                m = 2,
+                n = 3,
+            },
+            b = {
+                l = 1,
+                m = 2,
+                n = 3,
+            },
+            c = {
+                l = 1,
+                m = 2,
+                n = 3,
+            },
+        },
+        z = {
+            a = {
+                l = 1,
+                m = 2,
+                n = 3,
+            },
+            b = {
+                l = 1,
+                m = 2,
+                n = 3,
+            },
+            c = {
+                l = 1,
+                m = 2,
+                n = 3,
+            },
+        },
+    }
+
+    local lastTouch
+    local pt = proxy.new(t, {
+        updateRaw = true,
+        recursive = true,
+        anySetter = function (self, raw, key, value, config, custom)
+            local path = proxy.getPath(self)
+            path[#path+1] = key
+            lastTouch = table.concat(path, '.')
+            return value
+        end,
+    })
+
+    pt.x.a.l = 10
+    assert(t.x.a.l == 10)
+    assert(lastTouch == 'x.a.l')
+    pt.z.c.n = 20
+    assert(t.z.c.n == 20)
+    assert(lastTouch == 'z.c.n')
+    pt.y.b = {
+        xx = {
+            nn = 30,
+        }
+    }
+    assert(t.y.b.xx.nn == 30)
+    assert(lastTouch == 'y.b')
+    pt.y.b.xx.nn = 40
+    assert(t.y.b.xx.nn == 40)
+    assert(lastTouch == 'y.b.xx.nn')
 end
 
 print('proxy测试通过')

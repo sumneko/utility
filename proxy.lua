@@ -4,6 +4,7 @@ local M = {}
 local CONFIG    = {'<CONFIG>'}
 local CUSTOM    = {'<CUSTOM>'}
 local RECUSIVE  = {'<RECUSIVE>'}
+local PATH      = {'<PARENT>'}
 
 local rawMap = setmetatable({}, { __mode = 'k' })
 
@@ -24,7 +25,7 @@ local defaultConfig = {
 
 local metatable
 
-local function getRecusiveProxy(value, config, custom, recursive)
+local function getRecusiveProxy(parent, key, value, config, custom, recursive)
     value = rawMap[value] or value
     local proxy = recursive[value]
     if proxy then
@@ -37,6 +38,7 @@ local function getRecusiveProxy(value, config, custom, recursive)
         [CONFIG]   = config,
         [CUSTOM]   = custom,
         [RECUSIVE] = recursive,
+        [PATH]     = { parent, key },
     }, metatable)
     recursive[value] = proxy
     rawMap[proxy] = value
@@ -86,7 +88,7 @@ metatable = {
         end
 
         if recursive then
-            value = getRecusiveProxy(value, config, custom, recursive)
+            value = getRecusiveProxy(self, key, value, config, custom, recursive)
         end
 
         return value
@@ -163,6 +165,36 @@ end
 ---@return table
 function M.config(proxyObj)
     return proxyObj[CONFIG]
+end
+
+-- 把数组中的元素顺序*原地*反转
+---@param arr any[]
+---@return any[]
+local function revertArray(arr)
+    local len = #arr
+    if len <= 1 then
+        return arr
+    end
+    for x = 1, len // 2 do
+        local y = len - x + 1
+        arr[x], arr[y] = arr[y], arr[x]
+    end
+    return arr
+end
+
+function M.getPath(proxyObj)
+    local result = {}
+    while proxyObj do
+        local path = rawget(proxyObj, PATH)
+        if not path then
+            break
+        end
+        local parent, key = path[1], path[2]
+        result[#result+1] = key
+        proxyObj = parent
+    end
+    revertArray(result)
+    return result
 end
 
 return M
