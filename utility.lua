@@ -1054,4 +1054,53 @@ function m.default(v, d)
     return v
 end
 
+---@generic T
+---@param arr T[]
+---@param k integer
+---@param sorter? fun(a: T, b: T): boolean
+function m.sortK(arr, k, sorter)
+    if not sorter then
+        sorter = function (a, b)
+            return a < b
+        end
+    end
+    if k <= 0 then
+        return arr
+    end
+    if k >= (#arr // 2) then
+        return tableSort(arr, sorter)
+    end
+
+    local offset = 1
+
+    local function sort(left, right)
+        if left >= right then
+            return
+        end
+        if left > k then
+            return
+        end
+        -- 对这部分进行快排
+        local index = left + offset % (right - left)
+        local pivot = arr[index]
+        offset = offset << 1
+        if offset == 0 then
+            offset = 1
+        end
+        arr[index], arr[right] = arr[right], arr[index]
+        local i = left
+        for j = left, right - 1 do
+            if sorter(arr[j], pivot) then
+                arr[i], arr[j] = arr[j], arr[i]
+                i = i + 1
+            end
+        end
+        arr[i], arr[right] = arr[right], arr[i]
+        sort(i + 1, right)
+        sort(left, i - 1)
+    end
+
+    sort(1, #arr)
+end
+
 return m
