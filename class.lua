@@ -89,7 +89,6 @@ function M.declare(name, super, superInit)
                 return nil
             end
         else
-            rawset(self, k, r)
             return r
         end
     end
