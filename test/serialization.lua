@@ -66,6 +66,14 @@ do
     end
     test(t)
 end
+do
+    local t = {}
+    t[5] = 5
+    t[4] = 4
+    t[3] = 3
+    t[1] = 1
+    test(t)
+end
 
 local t = {}
 for i = 1, 10000 do

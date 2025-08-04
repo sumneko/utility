@@ -23,16 +23,20 @@ local Str32   = 'Z'
 local True    = 'T'
 local False   = 'F'
 local Nil     = '!'
-local ArrayB  = '[' -- 开始一张数组的定义
-local ArrayE  = ']' -- 结束一张数组的定义
-local TableB  = 'B' -- 开始一张表的定义
-local TableE  = 'E' -- 结束一张表的定义
+local ArrayB  = '[' -- 开始一张数组的定义（废弃，仅用于兼容）
+local ArrayE  = ']' -- 结束一张数组的定义（废弃，仅用于兼容）
+local TableB  = 'B' -- 开始一张表的定义（废弃，仅用于兼容）
+local TableE  = 'E' -- 结束一张表的定义（废弃，仅用于兼容）
+local MixB    = '{' -- 开始一张混合表的定义
+local MixE    = '}' -- 结束一张混合表的定义
+local Array   = '.' -- 此字段为整数部分
 local Ref     = 'R' -- 复用之前定义的字符串或表
 local Custom  = 'C' -- 自定义数据
 
 local RefStrLen = 4 -- 字符串长度大于此值时保存引用
 
-local EndSymbol = { '<End>' }
+local EndSymbol   = { '<End>' }
+local ArraySymbol = { '<Array>' }
 
 ---@alias Serialization.SupportTypes
 ---| number
@@ -130,22 +134,21 @@ function M.encode(data, hook, ignoreUnknownType)
             end
             refid = refid + 1
             tableMap[value] = refid
-            if isArray(value) then
-                -- 数组
-                buf[#buf+1] = ArrayB
-                for i = 1, #value do
-                    encode(value[i])
-                end
-                buf[#buf+1] = ArrayE
-            else
-                -- 哈希表
-                buf[#buf+1] = TableB
-                for k, v in next, value do
+            buf[#buf+1] = MixB
+            local i = 1
+            for k, v in next, value do
+                if k == i then
+                    -- 数组部分
+                    i = i + 1
+                    buf[#buf+1] = Array
+                    encode(v)
+                else
+                    -- 混合表部分
                     encode(k)
                     encode(v)
                 end
-                buf[#buf+1] = TableE
             end
+            buf[#buf+1] = MixE
         else
             if ignoreUnknownType then
                 return
@@ -244,7 +247,6 @@ function M.decode(str, hook)
                     break
                 end
                 local v = decode()
-                assert(v ~= nil)
                 ---@diagnostic disable-next-line: need-check-nil
                 value[k] = v
             end
@@ -267,6 +269,33 @@ function M.decode(str, hook)
             return value
         elseif tp == ArrayE then
             return EndSymbol
+        elseif tp == Array then
+            return ArraySymbol
+        elseif tp == MixE then
+            return EndSymbol
+        elseif tp == MixB then
+            value = {}
+            ref = ref + 1
+            refMap[ref] = value
+            local i = 1
+            while true do
+                local k = decode()
+                if k == EndSymbol then
+                    break
+                end
+                if k == ArraySymbol then
+                    -- 数组部分
+                    local v = decode()
+                    value[i] = v
+                    i = i + 1
+                else
+                    -- 哈希部分
+                    local v = decode()
+                    ---@diagnostic disable-next-line: need-check-nil
+                    value[k] = v
+                end
+            end
+            return value
         elseif tp == Ref then
             value = decode()
             value = refMap[value]
