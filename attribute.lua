@@ -17,6 +17,7 @@ System.defaultBaseSymbol = '!'
 function System:init()
     self.defines = {}
     self.methods = {}
+    self.links   = {}
     return self
 end
 
@@ -57,6 +58,44 @@ function System:compile()
     end
     ---@type boolean?
     self.compiled = true
+
+    ---@type table<string, table<string, true>>
+    local linkMap = {}
+    for name, define in pairs(self.defines) do
+        local links = define:collectLinks()
+        for k in pairs(links) do
+            if not linkMap[k] then
+                linkMap[k] = {}
+            end
+            linkMap[k][name] = true
+        end
+    end
+
+    local function lookIntoLink(name, visited)
+        if visited[name] then
+            return visited
+        end
+        visited[name] = true
+        local targets = linkMap[name]
+        if not targets then
+            return visited
+        end
+        for target in pairs(targets) do
+            lookIntoLink(target, visited)
+        end
+        return visited
+    end
+
+    for name in pairs(linkMap) do
+        local result = lookIntoLink(name, {})
+        result[name] = nil
+        local links = {}
+        for k in pairs(result) do
+            links[#links+1] = k
+        end
+        table.sort(links)
+        self.links[name] = links
+    end
 
     for _, define in pairs(self.defines) do
         define:compile()
@@ -161,6 +200,34 @@ local function loadCode(str, params)
 end
 
 ---@package
+function Define:compileUpdateLinkCode()
+    local links = self.system.links[self.name]
+    if not links then
+        return ''
+    end
+
+    local code = {}
+    local needMethods
+
+    for _, link in ipairs(links) do
+        local def = self.system.defines[link]
+        if def.simple then
+            needMethods = true
+            code[#code+1] = format('local method = methods[{key}]', { key = link })
+            code[#code+1] = format('method.set(instance, cache[{key}] or 0)', { key = link })
+        else
+            code[#code+1] = format('cache[{key}] = nil', { key = link })
+        end
+    end
+
+    if needMethods then
+        table.insert(code, 1, 'local methods = instance.methods')
+    end
+
+    return table.concat(code, '\n')
+end
+
+---@package
 function Define:compileSimple()
     local methods = self.system.methods
     local name = self.name
@@ -168,6 +235,7 @@ function Define:compileSimple()
         name = name,
         checkMin = '',
         checkMax = '',
+        updateLink = self:compileUpdateLinkCode(),
     }
     if self.min then
         if type(self.min) == 'number' then
@@ -203,9 +271,11 @@ end]], { max = self.max })
     methods[name] = {
         set = loadCode([[
 local instance, value = ...
+local cache = instance.cache
 {checkMin:s}
 {checkMax:s}
-instance.cache[{name}] = value
+cache[{name}] = value
+{updateLink:s}
 ]], params),
         add = loadCode([[
 local instance, value = ...
@@ -216,6 +286,7 @@ end
 {checkMin:s}
 {checkMax:s}
 cache[{name}] = value
+{updateLink:s}
 ]], params),
         get = loadCode([[
 local instance = ...
@@ -230,16 +301,23 @@ function Define:compileComplex()
     local methods = self.system.methods
     local name = self.name
 
+    local params = {
+        name = name,
+        updateLink = self:compileUpdateLinkCode(),
+    }
+
     local code = self.formula:gsub('{(.-)}', function (symbol)
         local key = name .. symbol
         if not methods[key] then
+            params.key = key
             methods[key] = {
                 set = loadCode([[
 local instance, value = ...
 local cache = instance.cache
 cache[{key}] = value
 cache[{name}] = nil
-]], { name = name, key = key }),
+{updateLink:s}
+]], params),
                 add = loadCode([[
 local instance, value = ...
 local cache = instance.cache
@@ -250,12 +328,13 @@ else
     cache[{key}] = value
 end
 cache[{name}] = nil
-]], { name = name, key = key }),
+{updateLink:s}
+]], params),
                 get = loadCode([[
 local instance = ...
 local cache = instance.cache
 return cache[{key}] or 0
-]], { name = name, key = key })
+]], params)
             }
         end
         return string.format('(cache[%q] or 0)', key)
@@ -329,6 +408,21 @@ function Define:compile()
     else
         self:compileComplex()
     end
+end
+
+---@package
+---@return table<string, true>
+function Define:collectLinks()
+    local links = {}
+
+    if type(self.min) == 'string' then
+        links[self.min] = true
+    end
+    if type(self.max) == 'string' then
+        links[self.max] = true
+    end
+
+    return links
 end
 
 ---@class Attribute.Instance
