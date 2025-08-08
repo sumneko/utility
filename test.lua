@@ -1,5 +1,6 @@
 dofile 'test/util.lua'
 dofile 'test/proxy.lua'
+dofile 'test/attribute.lua'
 dofile 'test/rtable.lua'
 dofile 'test/linked.lua'
 dofile 'test/pathtable.lua'
