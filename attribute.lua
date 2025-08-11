@@ -222,8 +222,47 @@ local function format(str, params)
     end))
 end
 
+---@param code string
+---@return string
+local function simplifyCode(code)
+    ---@type string[]
+    local lines = {}
+    for line in code:gmatch('[^\n]+') do
+        lines[#lines+1] = line
+    end
+    local usedLocals = {}
+    for i = #lines, 1, -1 do
+        local line = lines[i]
+        local locDef, tails = line:match('^local%s+(.-)(=.*)$')
+        if locDef then
+            local locs = {}
+            for name in locDef:gmatch('[%w_]+') do
+                if usedLocals[name] then
+                    locs[#locs+1] = name
+                    usedLocals[name] = nil
+                end
+            end
+            if #locs == 0 then
+                table.remove(lines, i)
+                goto continue
+            end
+            line = 'local ' .. table.concat(locs, ', ') .. tails
+            lines[i] = line
+            for name in tails:gmatch '[%w_]+' do
+                usedLocals[name] = true
+            end
+        else
+            for name in line:gmatch '[%w_]+' do
+                usedLocals[name] = true
+            end
+        end
+        ::continue::
+    end
+    return table.concat(lines, '\n')
+end
+
 local function loadCode(str, params)
-    local code = format(str, params)
+    local code = simplifyCode(format(str, params))
     return assert(load(code, code, 't'))
 end
 
