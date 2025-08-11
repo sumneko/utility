@@ -578,7 +578,6 @@ cache[{name}] = nil
                 add = loadCode([[
 local instance, value = ...
 local cache = instance.cache
-local dirty = instance.dirty
 local methods = instance.methods
 {saveTouch:s}
 {saveRate:s}
@@ -683,12 +682,13 @@ function Define:collectRequires()
     return requires
 end
 
+---@alias Attribute.EventCallback fun(instance: Attribute.Instance, value: number)
+
 ---@class Attribute.Instance
 ---@field package system Attribute.System
 ---@field package cache table<string, number>
----@field package dirty table<string, boolean>
 ---@field package methods table<string, Attribute.Method>
----@field package touched table<Attribute.Instance, table<string, number>>
+---@field package eventMap? table<string, Attribute.EventCallback[]>
 local Instance = {}
 ---@package
 Instance.__index = Instance
@@ -751,6 +751,29 @@ function Instance:getMax(name)
         error('Unknown attribute: ' .. name)
     end
     return method.getMax(self)
+end
+
+---@param name string
+---@param callback Attribute.EventCallback
+---@return function
+function Instance:event(name, callback)
+    if not self.eventMap then
+        self.eventMap = {}
+    end
+    local callbacks = self.eventMap[name]
+    if not callbacks then
+        callbacks = {}
+        self.eventMap[name] = callbacks
+    end
+    callbacks[#callbacks+1] = callback
+
+    local disposed
+    return function ()
+        if disposed then
+            return
+        end
+        disposed = true
+    end
 end
 
 ---@return Attribute.System

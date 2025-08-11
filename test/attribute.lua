@@ -204,6 +204,46 @@ do
     assert(instance:get('生命') == 150)
 end
 
+local testSystem6
+do
+    local system = attributeSystem.create()
+    testSystem6 = system
+
+    system:define('攻击')
+    system:define('防御')
+    system:define('移动速度')
+    system:define('力量')
+    system:define('最大生命')
+        : setFormula('({!} + {力量} * 10) * (1 + 0.01 * {%})')
+    system:define('生命', true, 0)
+        : setMax('最大生命', true)
+
+    local instance = system:instance()
+
+    local values = {}
+    local dispose = instance:event('生命', function (instance, oldValue)
+        values[#values+1] = oldValue
+        values[#values+1] = instance:get('生命')
+    end)
+
+    instance:set('最大生命', 100)
+    instance:set('生命', 100)
+    instance:set('力量', 10)
+    instance:set('力量', 20)
+
+    dispose()
+
+    instance:set('力量', 30)
+
+    assert(#values == 6)
+    assert(values[1] == 0)
+    assert(values[2] == 100)
+    assert(values[3] == 100)
+    assert(values[4] == 200)
+    assert(values[5] == 200)
+    assert(values[6] == 300)
+end
+
 -------------- 性能测试 -------------
 
 do
