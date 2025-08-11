@@ -66,13 +66,36 @@ do
 
     instance:set('最大生命', 1000)
     instance:set('生命', 2000)
+    assert(instance:getMin('生命') == 0)
+    assert(instance:getMax('生命') == 1000)
     assert(instance:get('生命') == 1000)
 
     instance:set('最大生命', 500)
+    assert(instance:getMin('生命') == 0)
+    assert(instance:getMax('生命') == 500)
     assert(instance:get('生命') == 500)
 
     instance:set('最大生命', 10000)
+    assert(instance:getMin('生命') == 0)
+    assert(instance:getMax('生命') == 10000)
     assert(instance:get('生命') == 500)
+end
+
+do
+    local system = attributeSystem.create()
+
+    system:define('生命', true, 0)
+        : setMax('最大生命', true)
+    system:define('最大生命', false, 1)
+
+    local instance = system:instance()
+
+    instance:set('最大生命', 1000)
+    instance:set('生命', 500)
+
+    instance:add('最大生命%', 100)
+    assert(instance:get('最大生命') == 2000)
+    assert(instance:get('生命') == 1000)
 end
 
 do

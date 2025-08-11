@@ -5,6 +5,8 @@ local API = {}
 ---@field package compiled? boolean
 ---@field package defines table<string, Attribute.Define>
 ---@field package methods table<string, Attribute.Method>
+---@field package links table<string, string[]>
+---@field package events? Attribute.Event[]
 local System = {}
 ---@package
 System.__index = System
@@ -49,7 +51,19 @@ end
 ---@return Attribute.Instance
 function System:instance()
     self:compile()
-    return API.createInstance(self)
+    local instance = API.createInstance(self)
+
+    return instance:init(self)
+end
+
+function System:onDidChange(names, callback)
+    if not self.events then
+        self.events = {}
+    end
+    self.events[#self.events+1] = {
+        names    = names,
+        callback = callback,
+    }
 end
 
 function System:compile()
@@ -62,8 +76,8 @@ function System:compile()
     ---@type table<string, table<string, true>>
     local linkMap = {}
     for name, define in pairs(self.defines) do
-        local links = define:collectLinks()
-        for k in pairs(links) do
+        local requires = define:collectRequires()
+        for k in pairs(requires) do
             if not linkMap[k] then
                 linkMap[k] = {}
             end
@@ -108,10 +122,15 @@ end
 ---@field package simple? boolean # 是否是个简易属性
 ---@field package min? number | string
 ---@field package max? number | string
+---@field package minKeepRate? boolean
+---@field package maxKeepRate? boolean
 ---@field package compiled? boolean
 local Define = {}
 ---@package
 Define.__index = Define
+
+Define.min = -math.huge
+Define.max = math.huge
 
 ---@param system Attribute.System
 ---@param name string
@@ -132,22 +151,26 @@ function Define:setSimple(simple)
 end
 
 ---@param min number | string
+---@param keepRate? boolean
 ---@return Attribute.Define
-function Define:setMin(min)
+function Define:setMin(min, keepRate)
     if self.compiled then
         error('Cannot change min value after compilation.')
     end
     self.min = min
+    self.minKeepRate = keepRate
     return self
 end
 
 ---@param max number | string
+---@param keepRate? boolean
 ---@return Attribute.Define
-function Define:setMax(max)
+function Define:setMax(max, keepRate)
     if self.compiled then
         error('Cannot change max value after compilation.')
     end
     self.max = max
+    self.maxKeepRate = keepRate
     return self
 end
 
@@ -175,9 +198,14 @@ end
 ---@field package set fun(instance: Attribute.Instance, value: number)
 ---@field package add fun(instance: Attribute.Instance, value: number)
 ---@field package get fun(instance: Attribute.Instance): number
+---@field package getMin fun(instance: Attribute.Instance): number
+---@field package getMax fun(instance: Attribute.Instance): number
 
+---@param str string
+---@param params table<string, any>
+---@return string
 local function format(str, params)
-    return str:gsub('{(.-)}', function (symbol)
+    return (str:gsub('{(.-)}', function (symbol)
         local left, right = symbol:match('^(.-):(.-)$')
         local fmt = '%q'
         if left and right then
@@ -191,7 +219,7 @@ local function format(str, params)
             error('Unknown symbol: ' .. symbol)
         end
         return string.format(fmt, key)
-    end)
+    end))
 end
 
 local function loadCode(str, params)
@@ -200,6 +228,50 @@ local function loadCode(str, params)
 end
 
 ---@package
+---@return string
+function Define:compileSaveRateCode()
+    local links = self.system.links[self.name]
+    if not links then
+        return ''
+    end
+
+    local code = {}
+
+    for i, link in ipairs(links) do
+        local def = self.system.defines[link]
+        if def.minKeepRate or def.maxKeepRate then
+            if not def.simple then
+                error('Complex attributes "' .. link .. '" cannot keep rates.')
+            end
+        end
+
+        if def.minKeepRate then
+            if type(def.min) ~= 'string' then
+                error('Min value of "' .. link .. '" must be another attribute to keep rate.')
+            end
+            code[#code+1] = format('local rateMin{i} = (cache[{key}] or 0) / instance:get({other})', {
+                i = i,
+                key = link,
+                other = def.min,
+            })
+        end
+        if def.maxKeepRate then
+            if type(def.max) ~= 'string' then
+                error('Max value of "' .. link .. '" must be another attribute to keep rate.')
+            end
+            code[#code+1] = format('local rateMax{i} = (cache[{key}] or 0) / instance:get({other})', {
+                i = i,
+                key = link,
+                other = def.max,
+            })
+        end
+    end
+
+    return table.concat(code, '\n')
+end
+
+---@package
+---@return string
 function Define:compileUpdateLinkCode()
     local links = self.system.links[self.name]
     if not links then
@@ -207,12 +279,10 @@ function Define:compileUpdateLinkCode()
     end
 
     local code = {}
-    local needMethods
 
     for _, link in ipairs(links) do
         local def = self.system.defines[link]
         if def.simple then
-            needMethods = true
             code[#code+1] = format('local method = methods[{key}]', { key = link })
             code[#code+1] = format('method.set(instance, cache[{key}] or 0)', { key = link })
         else
@@ -220,11 +290,69 @@ function Define:compileUpdateLinkCode()
         end
     end
 
-    if needMethods then
-        table.insert(code, 1, 'local methods = instance.methods')
-    end
-
     return table.concat(code, '\n')
+end
+
+---@return string
+function Define:compileGetMinCode()
+    local min = self.min
+    if not min then
+        return format('{min}', { min = -math.huge })
+    end
+    if type(min) == 'number' then
+        return format('{min}', { min = min })
+    end
+    return format('methods[{key}].get(instance)', { key = min })
+end
+
+---@return string
+function Define:compileGetMaxCode()
+    local max = self.max
+    if not max then
+        return format('{max}', { max = math.huge })
+    end
+    if type(max) == 'number' then
+        return format('{max}', { max = max })
+    end
+    return format('methods[{key}].get(instance)', { key = max })
+end
+
+---@return string
+function Define:compileCheckMinCode()
+    local min = self.min
+    if not min then
+        return ''
+    end
+    if type(min) == 'number' then
+        return format([[
+if value < {min} then
+    value = {min}
+end]], { min = min })
+    end
+    return format([[
+local min = instance:get({min})
+if value < min then
+    value = min
+end]], { min = min })
+end
+
+---@return string
+function Define:compileCheckMaxCode()
+    local max = self.max
+    if not max then
+        return ''
+    end
+    if type(max) == 'number' then
+        return format([[
+if value > {max} then
+    value = {max}
+end]], { max = max })
+    end
+    return format([[
+local max = instance:get({max})
+if value > max then
+    value = max
+end]], { max = max })
 end
 
 ---@package
@@ -233,45 +361,19 @@ function Define:compileSimple()
     local name = self.name
     local params = {
         name = name,
-        checkMin = '',
-        checkMax = '',
+        saveRate = self:compileSaveRateCode(),
+        getMin = self:compileGetMinCode(),
+        getMax = self:compileGetMaxCode(),
+        checkMin = self:compileCheckMinCode(),
+        checkMax = self:compileCheckMaxCode(),
         updateLink = self:compileUpdateLinkCode(),
     }
-    if self.min then
-        if type(self.min) == 'number' then
-            params.checkMin = format([[
-if value < {min} then
-    value = {min}
-end]], { min = self.min })
-        elseif type(self.min) == 'string' then
-            params.checkMin = format([[
-local min = instance:get({min})
-if value < min then
-    value = min
-end]], { min = self.min })
-        else
-            error('Invalid min value type: ' .. type(self.min))
-        end
-    end
-    if self.max then
-        if type(self.max) == 'number' then
-            params.checkMax = format([[if value > {max} then
-value = {max}
-end]], { max = self.max })
-        elseif type(self.max) == 'string' then
-            params.checkMax = format([[
-local max = instance:get({max})
-if value > max then
-    value = max
-end]], { max = self.max })
-        else
-            error('Invalid max value type: ' .. type(self.max))
-        end
-    end
     methods[name] = {
         set = loadCode([[
 local instance, value = ...
 local cache = instance.cache
+local methods = instance.methods
+{saveRate:s}
 {checkMin:s}
 {checkMax:s}
 cache[{name}] = value
@@ -280,9 +382,11 @@ cache[{name}] = value
         add = loadCode([[
 local instance, value = ...
 local cache = instance.cache
+local methods = instance.methods
 if cache[{name}] then
     value = cache[{name}] + value
 end
+{saveRate:s}
 {checkMin:s}
 {checkMax:s}
 cache[{name}] = value
@@ -293,6 +397,16 @@ local instance = ...
 local cache = instance.cache
 return cache[{name}] or 0
 ]], params),
+        getMin = loadCode([[
+local instance = ...
+local methods = instance.methods
+return {getMin:s}
+]], params),
+        getMax = loadCode([[
+local instance = ...
+local methods = instance.methods
+return {getMax:s}
+]], params)
     }
 end
 
@@ -303,6 +417,7 @@ function Define:compileComplex()
 
     local params = {
         name = name,
+        saveRate = self:compileSaveRateCode(),
         updateLink = self:compileUpdateLinkCode(),
     }
 
@@ -314,6 +429,8 @@ function Define:compileComplex()
                 set = loadCode([[
 local instance, value = ...
 local cache = instance.cache
+local methods = instance.methods
+{saveRate:s}
 cache[{key}] = value
 cache[{name}] = nil
 {updateLink:s}
@@ -322,6 +439,8 @@ cache[{name}] = nil
 local instance, value = ...
 local cache = instance.cache
 local dirty = instance.dirty
+local methods = instance.methods
+{saveRate:s}
 if cache[{key}] then
     cache[{key}] = cache[{key}] + value
 else
@@ -334,7 +453,13 @@ cache[{name}] = nil
 local instance = ...
 local cache = instance.cache
 return cache[{key}] or 0
-]], params)
+]], params),
+                getMin = function ()
+                    error('Cannot get min value of middle attribute: ' .. key)
+                end,
+                getMax = function ()
+                    error('Cannot get max value of middle attribute: ' .. key)
+                end
             }
         end
         return string.format('(cache[%q] or 0)', key)
@@ -343,55 +468,36 @@ return cache[{key}] or 0
     local params = {
         name = name,
         code = code,
-        checkMin = '',
-        checkMax = '',
+        getMin = self:compileGetMinCode(),
+        getMax = self:compileGetMaxCode(),
+        checkMin = self:compileCheckMinCode(),
+        checkMax = self:compileCheckMaxCode(),
     }
-    if self.min then
-        if type(self.min) == 'number' then
-            params.checkMin = format([[
-if result < {min} then
-    result = {min}
-end]], { min = self.min })
-        elseif type(self.min) == 'string' then
-            params.checkMin = format([[
-local min = instance:get({min})
-if result < min then
-    result = min
-end]], { min = self.min })
-        else
-            error('Invalid min value type: ' .. type(self.min))
-        end
-    end
-    if self.max then
-        if type(self.max) == 'number' then
-            params.checkMax = format([[if result > {max} then
-    result = {max}
-end]], { max = self.max })
-        elseif type(self.max) == 'string' then
-            params.checkMax = format([[
-local max = instance:get({max})
-if result > max then
-    result = max
-end]], { max = self.max })
-        else
-            error('Invalid max value type: ' .. type(self.max))
-        end
-    end
     methods[name] = {
         set = methods[name .. self.baseSymbol].set,
         add = methods[name .. self.baseSymbol].add,
         get = loadCode([[
 local instance = ...
 local cache = instance.cache
-local result = cache[{name}]
-if result then
-    return result
+local value = cache[{name}]
+if value then
+    return value
 end
-result = {code:s}
+value = {code:s}
 {checkMin:s}
 {checkMax:s}
-cache[{name}] = result
-return result
+cache[{name}] = value
+return value
+]], params),
+        getMin = loadCode([[
+local instance = ...
+local methods = instance.methods
+return {getMin:s}
+]], params),
+        getMax = loadCode([[
+local instance = ...
+local methods = instance.methods
+return {getMax:s}
 ]], params)
     }
 end
@@ -412,24 +518,29 @@ end
 
 ---@package
 ---@return table<string, true>
-function Define:collectLinks()
-    local links = {}
+function Define:collectRequires()
+    local requires = {}
 
     if type(self.min) == 'string' then
-        links[self.min] = true
+        requires[self.min] = true
     end
     if type(self.max) == 'string' then
-        links[self.max] = true
+        requires[self.max] = true
     end
 
-    return links
+    return requires
 end
+
+---@class Attribute.Event
+---@field names string[]
+---@field callback fun(instance: Attribute.Instance, ...: number)
 
 ---@class Attribute.Instance
 ---@field package system Attribute.System
 ---@field package cache table<string, number>
 ---@field package dirty table<string, boolean>
 ---@field package methods table<string, Attribute.Method>
+---@field package events? Attribute.Event[]
 local Instance = {}
 ---@package
 Instance.__index = Instance
@@ -472,6 +583,47 @@ function Instance:get(name)
         error('Unknown attribute: ' .. name)
     end
     return method.get(self)
+end
+
+---@param name string
+---@return number
+function Instance:getMin(name)
+    local method = self.methods[name]
+    if not method then
+        error('Unknown attribute: ' .. name)
+    end
+    return method.getMin(self)
+end
+
+---@param name string
+---@return number
+function Instance:getMax(name)
+    local method = self.methods[name]
+    if not method then
+        error('Unknown attribute: ' .. name)
+    end
+    return method.getMax(self)
+end
+
+---@param names string[]
+---@param callback fun(instance: Attribute.Instance, ...: number)
+---@return function disposer
+function Instance:onDidChange(names, callback)
+    if not self.events then
+        self.events = {}
+    end
+    self.events[#self.events+1] = {
+        names    = names,
+        callback = callback,
+    }
+
+    local disposed
+    return function ()
+        if disposed then
+            return
+        end
+        disposed = true
+    end
 end
 
 ---@return Attribute.System
