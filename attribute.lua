@@ -6,7 +6,7 @@ local API = {}
 ---@field package defines table<string, Attribute.Define>
 ---@field package methods table<string, Attribute.Method>
 ---@field package links table<string, string[]>
----@field package events? Attribute.Event[]
+---@field package touched table<Attribute.Instance, table<string, number>>
 local System = {}
 ---@package
 System.__index = System
@@ -20,6 +20,7 @@ function System:init()
     self.defines = {}
     self.methods = {}
     self.links   = {}
+    self.touched = {}
     return self
 end
 
@@ -54,16 +55,6 @@ function System:instance()
     local instance = API.createInstance(self)
 
     return instance:init(self)
-end
-
-function System:onDidChange(names, callback)
-    if not self.events then
-        self.events = {}
-    end
-    self.events[#self.events+1] = {
-        names    = names,
-        callback = callback,
-    }
 end
 
 function System:compile()
@@ -116,6 +107,16 @@ function System:compile()
     end
 end
 
+---@return table<Attribute.Instance, table<string, number>>? oldValues
+function System:getTouched()
+    local touched = self.touched
+    if not next(touched) then
+        return nil
+    end
+    self.touched = {}
+    return touched
+end
+
 ---@class Attribute.Define
 ---@field package formula string
 ---@field package baseSymbol string
@@ -124,6 +125,7 @@ end
 ---@field package max? number | string
 ---@field package minKeepRate? boolean
 ---@field package maxKeepRate? boolean
+---@field package needRecordTouch? boolean
 ---@field package compiled? boolean
 local Define = {}
 ---@package
@@ -188,6 +190,12 @@ function Define:setBaseSymbol(baseSymbol)
         error('Cannot change base symbol after compilation.')
     end
     self.baseSymbol = baseSymbol
+    return self
+end
+
+---@return Attribute.Define
+function Define:recordTouch()
+    self.needRecordTouch = true
     return self
 end
 
@@ -280,6 +288,49 @@ end
 
 ---@package
 ---@return string
+function Define:compileSaveTouchCode()
+    local links = self.system.links[self.name]
+
+    local code = {}
+
+    ---@param def Attribute.Define
+    local function checkDef(def)
+        if not def.needRecordTouch then
+            return
+        end
+        code[#code+1] = format('if not record[{key}] then record[{key}] = {value:s} end', {
+            key = def.name,
+            value = self:getAttrCode(def.name)
+        })
+    end
+
+    checkDef(self)
+
+    if links then
+        for _, link in ipairs(links) do
+            local def = self.system.defines[link]
+            checkDef(def)
+        end
+    end
+
+    if #code == 0 then
+        return ''
+    end
+
+    table.insert(code, 1, [[
+local touched = instance.system.touched
+local record = touched[instance]
+if not record then
+    record = {}
+    touched[instance] = record
+end
+]])
+
+    return table.concat(code, '\n')
+end
+
+---@package
+---@return string
 function Define:compileSaveRateCode()
     local links = self.system.links[self.name]
     if not links then
@@ -300,21 +351,31 @@ function Define:compileSaveRateCode()
             if type(def.min) ~= 'string' then
                 error('Min value of "' .. link .. '" must be another attribute to keep rate.')
             end
-            code[#code+1] = format('local rateMin{i} = (cache[{key}] or 0) / {other:s}', {
-                i = i,
-                key = link,
-                other = self:getAttrCode(def.min --[[@as string]]),
-            })
+            code[#code+1] = format([[
+local rateMin{i} = (cache[{key}] or 0) / {other:s}
+if rateMin{i} ~= rateMin{i} then
+    rateMin{i} = 0
+end
+]], {
+    i = i,
+    key = link,
+    other = self:getAttrCode(def.min --[[@as string]]),
+})
         end
         if def.maxKeepRate then
             if type(def.max) ~= 'string' then
                 error('Max value of "' .. link .. '" must be another attribute to keep rate.')
             end
-            code[#code+1] = format('local rateMax{i} = (cache[{key}] or 0) / {other:s}', {
-                i = i,
-                key = link,
-                other = self:getAttrCode(def.max --[[@as string]]),
-            })
+            code[#code+1] = format([[
+local rateMax{i} = (cache[{key}] or 0) / {other:s}
+if rateMax{i} ~= rateMax{i} then
+    rateMax{i} = 0
+end
+]], {
+    i = i,
+    key = link,
+    other = self:getAttrCode(def.max --[[@as string]]),
+})
         end
     end
 
@@ -432,6 +493,7 @@ function Define:compileSimple()
     local name = self.name
     local params = {
         name = name,
+        saveTouch = self:compileSaveTouchCode(),
         saveRate = self:compileSaveRateCode(),
         getMin = self:compileGetMinCode(),
         getMax = self:compileGetMaxCode(),
@@ -444,6 +506,7 @@ function Define:compileSimple()
 local instance, value = ...
 local cache = instance.cache
 local methods = instance.methods
+{saveTouch:s}
 {saveRate:s}
 {checkMin:s}
 {checkMax:s}
@@ -457,6 +520,7 @@ local methods = instance.methods
 if cache[{name}] then
     value = cache[{name}] + value
 end
+{saveTouch:s}
 {saveRate:s}
 {checkMin:s}
 {checkMax:s}
@@ -488,6 +552,7 @@ function Define:compileComplex()
 
     local params = {
         name = name,
+        saveTouch = self:compileSaveTouchCode(),
         saveRate = self:compileSaveRateCode(),
         updateLink = self:compileUpdateLinkCode(),
     }
@@ -504,6 +569,7 @@ function Define:compileComplex()
 local instance, value = ...
 local cache = instance.cache
 local methods = instance.methods
+{saveTouch:s}
 {saveRate:s}
 cache[{key}] = value
 cache[{name}] = nil
@@ -514,6 +580,7 @@ local instance, value = ...
 local cache = instance.cache
 local dirty = instance.dirty
 local methods = instance.methods
+{saveTouch:s}
 {saveRate:s}
 if cache[{key}] then
     cache[{key}] = cache[{key}] + value
@@ -616,16 +683,12 @@ function Define:collectRequires()
     return requires
 end
 
----@class Attribute.Event
----@field names string[]
----@field callback fun(instance: Attribute.Instance, ...: number)
-
 ---@class Attribute.Instance
 ---@field package system Attribute.System
 ---@field package cache table<string, number>
 ---@field package dirty table<string, boolean>
 ---@field package methods table<string, Attribute.Method>
----@field package events? Attribute.Event[]
+---@field package touched table<Attribute.Instance, table<string, number>>
 local Instance = {}
 ---@package
 Instance.__index = Instance
@@ -688,27 +751,6 @@ function Instance:getMax(name)
         error('Unknown attribute: ' .. name)
     end
     return method.getMax(self)
-end
-
----@param names string[]
----@param callback fun(instance: Attribute.Instance, ...: number)
----@return function disposer
-function Instance:onDidChange(names, callback)
-    if not self.events then
-        self.events = {}
-    end
-    self.events[#self.events+1] = {
-        names    = names,
-        callback = callback,
-    }
-
-    local disposed
-    return function ()
-        if disposed then
-            return
-        end
-        disposed = true
-    end
 end
 
 ---@return Attribute.System
