@@ -264,6 +264,21 @@ local function loadCode(str, params)
 end
 
 ---@package
+---@param name string
+---@return string
+function Define:getAttrCode(name)
+    local def = self.system.defines[name]
+    if not def then
+        error('Unknown attribute: ' .. name)
+    end
+    if def.simple then
+        return format('cache[{key}]', { key = name })
+    else
+        return format('methods[{key}].get(instance)', { key = name })
+    end
+end
+
+---@package
 ---@return string
 function Define:compileSaveRateCode()
     local links = self.system.links[self.name]
@@ -285,20 +300,20 @@ function Define:compileSaveRateCode()
             if type(def.min) ~= 'string' then
                 error('Min value of "' .. link .. '" must be another attribute to keep rate.')
             end
-            code[#code+1] = format('local rateMin{i} = (cache[{key}] or 0) / methods[{other}].get(instance)', {
+            code[#code+1] = format('local rateMin{i} = (cache[{key}] or 0) / {other:s}', {
                 i = i,
                 key = link,
-                other = def.min,
+                other = self:getAttrCode(def.min --[[@as string]]),
             })
         end
         if def.maxKeepRate then
             if type(def.max) ~= 'string' then
                 error('Max value of "' .. link .. '" must be another attribute to keep rate.')
             end
-            code[#code+1] = format('local rateMax{i} = (cache[{key}] or 0) / methods[{other}].get(instance)', {
+            code[#code+1] = format('local rateMax{i} = (cache[{key}] or 0) / {other:s}', {
                 i = i,
                 key = link,
-                other = def.max,
+                other = self:getAttrCode(def.max --[[@as string]]),
             })
         end
     end
@@ -331,17 +346,17 @@ function Define:compileUpdateLinkCode()
     for i, link in ipairs(links) do
         local def = self.system.defines[link]
         if def.minKeepRate then
-            code[#code+1] = format('cache[{key}] = methods[{other}].get(instance) * rateMin{i}', {
+            code[#code+1] = format('cache[{key}] = {other:s} * rateMin{i}', {
                 key = link,
                 i = i,
-                other = def.min,
+                other = self:getAttrCode(def.min --[[@as string]]),
             })
         end
         if def.maxKeepRate then
-            code[#code+1] = format('cache[{key}] = methods[{other}].get(instance) * rateMax{i}', {
+            code[#code+1] = format('cache[{key}] = {other:s} * rateMax{i}', {
                 key = link,
                 i = i,
-                other = def.max,
+                other = self:getAttrCode(def.max --[[@as string]]),
             })
         end
     end
@@ -358,7 +373,7 @@ function Define:compileGetMinCode()
     if type(min) == 'number' then
         return format('{min}', { min = min })
     end
-    return format('methods[{key}].get(instance)', { key = min })
+    return self:getAttrCode(min)
 end
 
 ---@return string
@@ -370,7 +385,7 @@ function Define:compileGetMaxCode()
     if type(max) == 'number' then
         return format('{max}', { max = max })
     end
-    return format('methods[{key}].get(instance)', { key = max })
+    return self:getAttrCode(max)
 end
 
 ---@return string
@@ -386,10 +401,10 @@ if value < {min} then
 end]], { min = min })
     end
     return format([[
-local min = methods[{min}].get(instance)
+local min = {min:s}
 if value < min then
     value = min
-end]], { min = min })
+end]], { min = self:getAttrCode(min) })
 end
 
 ---@return string
@@ -405,10 +420,10 @@ if value > {max} then
 end]], { max = max })
     end
     return format([[
-local max = methods[{max}].get(instance)
+local max = {max:s}
 if value > max then
     value = max
-end]], { max = max })
+end]], { max = self:getAttrCode(max) })
 end
 
 ---@package
@@ -479,7 +494,7 @@ function Define:compileComplex()
 
     local code = self.formula:gsub('{(.-)}', function (symbol)
         if self.system.defines[symbol] then
-            return string.format('methods[%q].get(instance)', symbol)
+            return self:getAttrCode(symbol)
         end
         local key = name .. symbol
         if not methods[key] then
