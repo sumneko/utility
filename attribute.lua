@@ -246,7 +246,7 @@ local function simplifyCode(code)
                 table.remove(lines, i)
                 goto continue
             end
-            line = 'local ' .. table.concat(locs, ', ') .. tails
+            line = 'local ' .. table.concat(locs, ', ') .. ' ' .. tails
             lines[i] = line
             for name in tails:gmatch '[%w_]+' do
                 usedLocals[name] = true
@@ -288,7 +288,7 @@ function Define:compileSaveRateCode()
             if type(def.min) ~= 'string' then
                 error('Min value of "' .. link .. '" must be another attribute to keep rate.')
             end
-            code[#code+1] = format('local rateMin{i} = (cache[{key}] or 0) / instance:get({other})', {
+            code[#code+1] = format('local rateMin{i} = (cache[{key}] or 0) / methods[{other}].get(instance)', {
                 i = i,
                 key = link,
                 other = def.min,
@@ -298,7 +298,7 @@ function Define:compileSaveRateCode()
             if type(def.max) ~= 'string' then
                 error('Max value of "' .. link .. '" must be another attribute to keep rate.')
             end
-            code[#code+1] = format('local rateMax{i} = (cache[{key}] or 0) / instance:get({other})', {
+            code[#code+1] = format('local rateMax{i} = (cache[{key}] or 0) / methods[{other}].get(instance)', {
                 i = i,
                 key = link,
                 other = def.max,
@@ -334,14 +334,14 @@ function Define:compileUpdateLinkCode()
     for i, link in ipairs(links) do
         local def = self.system.defines[link]
         if def.minKeepRate then
-            code[#code+1] = format('cache[{key}] = instance:get({other}) * rateMin{i}', {
+            code[#code+1] = format('cache[{key}] = methods[{other}].get(instance) * rateMin{i}', {
                 key = link,
                 i = i,
                 other = def.min,
             })
         end
         if def.maxKeepRate then
-            code[#code+1] = format('cache[{key}] = instance:get({other}) * rateMax{i}', {
+            code[#code+1] = format('cache[{key}] = methods[{other}].get(instance) * rateMax{i}', {
                 key = link,
                 i = i,
                 other = def.max,
@@ -389,7 +389,7 @@ if value < {min} then
 end]], { min = min })
     end
     return format([[
-local min = instance:get({min})
+local min = methods[{min}].get(instance)
 if value < min then
     value = min
 end]], { min = min })
@@ -408,7 +408,7 @@ if value > {max} then
 end]], { max = max })
     end
     return format([[
-local max = instance:get({max})
+local max = methods[{max}].get(instance)
 if value > max then
     value = max
 end]], { max = max })
@@ -481,6 +481,9 @@ function Define:compileComplex()
     }
 
     local code = self.formula:gsub('{(.-)}', function (symbol)
+        if self.system.defines[symbol] then
+            return string.format('methods[%q].get(instance)', symbol)
+        end
         local key = name .. symbol
         if not methods[key] then
             params.key = key
@@ -538,6 +541,7 @@ return cache[{key}] or 0
         get = loadCode([[
 local instance = ...
 local cache = instance.cache
+local methods = instance.methods
 local value = cache[{name}]
 if value then
     return value
@@ -580,6 +584,11 @@ end
 function Define:collectRequires()
     local requires = {}
 
+    for name in self.formula:gmatch '{(.-)}' do
+        if self.system.defines[name] then
+            requires[name] = true
+        end
+    end
     if type(self.min) == 'string' then
         requires[self.min] = true
     end

@@ -101,6 +101,27 @@ end
 do
     local system = attributeSystem.create()
 
+    system:define('最大生命')
+        : setFormula('({!} + {力量} * 10) * (1 + 0.01 * {%})')
+    system:define('力量')
+
+    local instance = system:instance()
+
+    instance:set('最大生命', 1000)
+    instance:set('最大生命%', 100)
+    assert(instance:get('最大生命!') == 1000)
+    assert(instance:get('最大生命') == 2000)
+
+    instance:set('力量', 100)
+    assert(instance:get('最大生命!') == 1000)
+    assert(instance:get('最大生命') == 4000)
+end
+
+-------------- 性能测试 -------------
+
+do
+    local system = attributeSystem.create()
+
     system:define('攻击', false, 0, 10000)
 
     local instance = system:instance()
