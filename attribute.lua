@@ -283,10 +283,30 @@ function Define:compileUpdateLinkCode()
     for _, link in ipairs(links) do
         local def = self.system.defines[link]
         if def.simple then
-            code[#code+1] = format('local method = methods[{key}]', { key = link })
-            code[#code+1] = format('method.set(instance, cache[{key}] or 0)', { key = link })
+            if not def.minKeepRate and not def.maxKeepRate then
+                code[#code+1] = format('local method = methods[{key}]', { key = link })
+                code[#code+1] = format('method.set(instance, cache[{key}] or 0)', { key = link })
+            end
         else
             code[#code+1] = format('cache[{key}] = nil', { key = link })
+        end
+    end
+
+    for i, link in ipairs(links) do
+        local def = self.system.defines[link]
+        if def.minKeepRate then
+            code[#code+1] = format('cache[{key}] = instance:get({other}) * rateMin{i}', {
+                key = link,
+                i = i,
+                other = def.min,
+            })
+        end
+        if def.maxKeepRate then
+            code[#code+1] = format('cache[{key}] = instance:get({other}) * rateMax{i}', {
+                key = link,
+                i = i,
+                other = def.max,
+            })
         end
     end
 

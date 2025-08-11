@@ -121,4 +121,24 @@ do
     print('属性基准测试2耗时: ' .. duration .. '秒')
 end
 
+do
+    local system = attributeSystem.create()
+
+    system:define('生命', true, 0)
+        : setMax('最大生命', true)
+    system:define('最大生命', false, 1)
+
+    local instance = system:instance()
+
+    instance:set('最大生命', 1000)
+    instance:set('生命', 500)
+
+    local start = os.clock()
+    for i = 1, 1000000 do
+        instance:set('最大生命', i)
+    end
+    local duration = os.clock() - start
+    print('属性基准测试3耗时: ' .. duration .. '秒')
+end
+
 print('attribute 测试完成')
