@@ -117,6 +117,37 @@ do
     assert(instance:get('最大生命') == 4000)
 end
 
+do
+    local system = attributeSystem.create()
+
+    system:define('攻击')
+        : setFormula('({!} + {主属性提供的攻击}) * (1 + 0.01 * {%})')
+    system:define('主属性', true)
+    system:define('力量')
+    system:define('敏捷')
+    system:define('智力')
+    system:define('主属性提供的攻击')
+        : setFormula('({主属性} == 1 and {力量}) or ({主属性} == 2 and {敏捷}) or ({主属性} == 3 and {智力}) or 0')
+
+    local instance = system:instance()
+    instance:set('攻击', 1000)
+    instance:set('力量', 100)
+    instance:set('敏捷', 50)
+    instance:set('智力', 30)
+
+    assert(instance:get('攻击!') == 1000)
+    assert(instance:get('攻击') == 1000)
+
+    instance:set('主属性', 1) -- 力量
+    assert(instance:get('攻击') == 1100)
+
+    instance:set('主属性', 2) -- 敏捷
+    assert(instance:get('攻击') == 1050)
+
+    instance:set('主属性', 3) -- 智力
+    assert(instance:get('攻击') == 1030)
+end
+
 -------------- 性能测试 -------------
 
 do

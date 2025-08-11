@@ -129,9 +129,6 @@ local Define = {}
 ---@package
 Define.__index = Define
 
-Define.min = -math.huge
-Define.max = math.huge
-
 ---@param system Attribute.System
 ---@param name string
 function Define:init(system, name)
@@ -535,9 +532,14 @@ return cache[{key}] or 0
         checkMin = self:compileCheckMinCode(),
         checkMax = self:compileCheckMaxCode(),
     }
+    local baseMethod = methods[name .. self.baseSymbol]
     methods[name] = {
-        set = methods[name .. self.baseSymbol].set,
-        add = methods[name .. self.baseSymbol].add,
+        set = baseMethod and baseMethod.set or function ()
+            error('Attribute "' .. name .. '" is readonly.')
+        end,
+        add = baseMethod and baseMethod.add or function ()
+            error('Attribute "' .. name .. '" is readonly.')
+        end,
         get = loadCode([[
 local instance = ...
 local cache = instance.cache
