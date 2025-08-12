@@ -387,10 +387,11 @@ function Define:compileSaveRateCode()
                 error('Min value of "' .. link .. '" must be another attribute to keep rate.')
             end
             code[#code+1] = format([[
-local rateMin{i} = (cache[{key}] or 0) / {other:s}
-if rateMin{i} ~= rateMin{i} then
-    rateMin{i} = 0
+local other = {other:s}
+if other == 0 then
+    other = 1
 end
+local rateMin{i} = (cache[{key}] or 0) / other
 ]], {
     i = i,
     key = link,
@@ -402,7 +403,11 @@ end
                 error('Max value of "' .. link .. '" must be another attribute to keep rate.')
             end
             code[#code+1] = format([[
-local rateMax{i} = (cache[{key}] or 0) / {other:s}
+local other = {other:s}
+if other == 0 then
+    other = 1
+end
+local rateMax{i} = (cache[{key}] or 0) / other
 if rateMax{i} ~= rateMax{i} then
     rateMax{i} = 0
 end
