@@ -408,9 +408,6 @@ if other == 0 then
     other = 1
 end
 local rateMax{i} = (cache[{key}] or 0) / other
-if rateMax{i} ~= rateMax{i} then
-    rateMax{i} = 0
-end
 ]], {
     i = i,
     key = link,
