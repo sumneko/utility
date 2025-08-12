@@ -221,19 +221,24 @@ do
     local instance = system:instance()
 
     local values = {}
-    local dispose = instance:event('生命', function (instance, oldValue)
+    local dispose = instance:event('生命', function (instance, newValue, oldValue)
         values[#values+1] = oldValue
-        values[#values+1] = instance:get('生命')
+        values[#values+1] = newValue
     end)
 
     instance:set('最大生命', 100)
+    system:updateEvent()
     instance:set('生命', 100)
+    system:updateEvent()
     instance:set('力量', 10)
+    system:updateEvent()
     instance:set('力量', 20)
+    system:updateEvent()
 
     dispose()
 
     instance:set('力量', 30)
+    system:updateEvent()
 
     assert(#values == 6)
     assert(values[1] == 0)
@@ -316,6 +321,65 @@ do
     end
     local duration = os.clock() - start
     print('属性基准测试5耗时: ' .. duration .. '秒')
+end
+
+do
+    local instance = testSystem6:instance()
+
+    local dispose = instance:event('生命', function () end)
+
+    local start = os.clock()
+    for i = 1, 1000000 do
+        instance:set('生命', i)
+    end
+    local duration = os.clock() - start
+    print('属性基准测试6-1耗时: ' .. duration .. '秒')
+
+    local start = os.clock()
+    for i = 1, 1000000 do
+        instance:set('生命', i)
+        testSystem6:updateEvent()
+    end
+    local duration = os.clock() - start
+    print('属性基准测试6-2耗时: ' .. duration .. '秒')
+
+    dispose()
+
+    local start = os.clock()
+    for i = 1, 1000000 do
+        instance:set('生命', i)
+        testSystem6:updateEvent()
+    end
+    local duration = os.clock() - start
+    print('属性基准测试6-3耗时: ' .. duration .. '秒')
+
+    local dispose1 = instance:event('生命', function () end)
+    local dispose2 = instance:event('生命', function () end)
+    local dispose3 = instance:event('生命', function () end)
+    local dispose4 = instance:event('生命', function () end)
+    local dispose5 = instance:event('生命', function () end)
+
+    local start = os.clock()
+    for i = 1, 1000000 do
+        instance:set('生命', i)
+        testSystem6:updateEvent()
+    end
+    local duration = os.clock() - start
+    print('属性基准测试6-4耗时: ' .. duration .. '秒')
+
+    dispose5()
+    dispose4()
+    dispose3()
+    dispose2()
+    dispose1()
+
+    local start = os.clock()
+    for i = 1, 1000000 do
+        instance:set('生命', i)
+        testSystem6:updateEvent()
+    end
+    local duration = os.clock() - start
+    print('属性基准测试6-5耗时: ' .. duration .. '秒')
 end
 
 print('attribute 测试完成')

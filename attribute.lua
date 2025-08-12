@@ -6,7 +6,10 @@ local API = {}
 ---@field package defines table<string, Attribute.Define>
 ---@field package methods table<string, Attribute.Method>
 ---@field package links table<string, string[]>
+---@field package require table<string, string[]>
 ---@field package touched table<Attribute.Instance, table<string, number>>
+---@field package dirtyMark table<Attribute.Instance, true>
+---@field package dirtyList Attribute.Instance[]
 local System = {}
 ---@package
 System.__index = System
@@ -17,10 +20,13 @@ System.defaultBaseSymbol = '!'
 ---@package
 ---@return Attribute.System
 function System:init()
-    self.defines = {}
-    self.methods = {}
-    self.links   = {}
-    self.touched = {}
+    self.defines   = {}
+    self.methods   = {}
+    self.links     = {}
+    self.require   = {}
+    self.touched   = {}
+    self.dirtyMark = {}
+    self.dirtyList = {}
     return self
 end
 
@@ -74,6 +80,8 @@ function System:compile()
             end
             linkMap[k][name] = true
         end
+
+        self.require[name] = { name }
     end
 
     local function lookIntoLink(name, visited)
@@ -100,6 +108,10 @@ function System:compile()
         end
         table.sort(links)
         self.links[name] = links
+
+        for _, link in ipairs(links) do
+            table.insert(self.require[link], name)
+        end
     end
 
     for _, define in pairs(self.defines) do
@@ -117,6 +129,26 @@ function System:getTouched()
     return touched
 end
 
+function System:updateEvent()
+    local list = self.dirtyList
+    local len = #list
+    if len == 0 then
+        return
+    end
+
+    self.dirtyList = {}
+    self.dirtyMark = {}
+
+    for i = 1, len do
+        local instance = list[i]
+        local events = instance.events
+        ---@cast events -?
+        for j = 1, #events do
+            events[j](instance)
+        end
+    end
+end
+
 ---@class Attribute.Define
 ---@field package formula string
 ---@field package baseSymbol string
@@ -131,6 +163,7 @@ local Define = {}
 ---@package
 Define.__index = Define
 
+---@package
 ---@param system Attribute.System
 ---@param name string
 function Define:init(system, name)
@@ -205,6 +238,7 @@ end
 ---@field package get fun(instance: Attribute.Instance): number
 ---@field package getMin fun(instance: Attribute.Instance): number
 ---@field package getMax fun(instance: Attribute.Instance): number
+---@field package checkAttention fun(instance: Attribute.Instance)
 
 ---@param str string
 ---@param params table<string, any>
@@ -425,6 +459,7 @@ function Define:compileUpdateLinkCode()
     return table.concat(code, '\n')
 end
 
+---@package
 ---@return string
 function Define:compileGetMinCode()
     local min = self.min
@@ -437,6 +472,7 @@ function Define:compileGetMinCode()
     return self:getAttrCode(min)
 end
 
+---@package
 ---@return string
 function Define:compileGetMaxCode()
     local max = self.max
@@ -449,6 +485,7 @@ function Define:compileGetMaxCode()
     return self:getAttrCode(max)
 end
 
+---@package
 ---@return string
 function Define:compileCheckMinCode()
     local min = self.min
@@ -468,6 +505,7 @@ if value < min then
 end]], { min = self:getAttrCode(min) })
 end
 
+---@package
 ---@return string
 function Define:compileCheckMaxCode()
     local max = self.max
@@ -485,6 +523,22 @@ local max = {max:s}
 if value > max then
     value = max
 end]], { max = self:getAttrCode(max) })
+end
+
+---@package
+function Define:compileCheckAttention(name)
+    return loadCode([[
+local instance = ...
+if not instance.attention[{name}] then
+    return
+end
+local system = instance.system
+if system.dirtyMark[instance] then
+    return
+end
+system.dirtyMark[instance] = true
+system.dirtyList[#system.dirtyList+1] = instance
+]], { name = name })
 end
 
 ---@package
@@ -541,7 +595,8 @@ return {getMin:s}
 local instance = ...
 local methods = instance.methods
 return {getMax:s}
-]], params)
+]], params),
+        checkAttention = self:compileCheckAttention(name)
     }
 end
 
@@ -599,7 +654,8 @@ return cache[{key}] or 0
                 end,
                 getMax = function ()
                     error('Cannot get max value of middle attribute: ' .. key)
-                end
+                end,
+                checkAttention = self:compileCheckAttention(name)
             }
         end
         return string.format('(cache[%q] or 0)', key)
@@ -644,7 +700,8 @@ return {getMin:s}
 local instance = ...
 local methods = instance.methods
 return {getMax:s}
-]], params)
+]], params),
+        checkAttention = self:compileCheckAttention(name),
     }
 end
 
@@ -682,13 +739,14 @@ function Define:collectRequires()
     return requires
 end
 
----@alias Attribute.EventCallback fun(instance: Attribute.Instance, value: number)
+---@alias Attribute.EventCallback fun(instance: Attribute.Instance, newValue: number, oldValue: number)
 
 ---@class Attribute.Instance
 ---@field package system Attribute.System
 ---@field package cache table<string, number>
 ---@field package methods table<string, Attribute.Method>
----@field package eventMap? table<string, Attribute.EventCallback[]>
+---@field package events? function[]
+---@field package attention? table<string, integer>
 local Instance = {}
 ---@package
 Instance.__index = Instance
@@ -711,6 +769,9 @@ function Instance:set(name, value)
         error('Unknown attribute: ' .. name)
     end
     method.set(self, value)
+    if self.attention then
+        method.checkAttention(self)
+    end
 end
 
 ---@param name string
@@ -721,6 +782,9 @@ function Instance:add(name, value)
         error('Unknown attribute: ' .. name)
     end
     method.add(self, value)
+    if self.attention then
+        method.checkAttention(self)
+    end
 end
 
 ---@param name string
@@ -757,15 +821,35 @@ end
 ---@param callback Attribute.EventCallback
 ---@return function
 function Instance:event(name, callback)
-    if not self.eventMap then
-        self.eventMap = {}
+    local events = self.events
+    if not events then
+        events = {}
+        self.events = events
     end
-    local callbacks = self.eventMap[name]
-    if not callbacks then
-        callbacks = {}
-        self.eventMap[name] = callbacks
+
+    local oldValue = self:get(name)
+    local proxy = function ()
+        local newValue = self:get(name)
+        if newValue == oldValue then
+            return
+        end
+        callback(self, newValue, oldValue)
+        oldValue = newValue
     end
-    callbacks[#callbacks+1] = callback
+
+    events[#events+1] = proxy
+    local firstTry = #events
+
+    local requires = self.system.require[name]
+    local attention = self.attention
+    if not attention then
+        attention = {}
+        self.attention = attention
+    end
+
+    for _, attr in ipairs(requires) do
+        attention[attr] = (attention[attr] or 0) + 1
+    end
 
     local disposed
     return function ()
@@ -773,6 +857,31 @@ function Instance:event(name, callback)
             return
         end
         disposed = true
+
+        if events[firstTry] == proxy then
+            events[firstTry] = events[#events]
+            events[#events] = nil
+        else
+            for i = 1, #events do
+                if events[i] == proxy then
+                    events[i] = events[#events]
+                    events[#events] = nil
+                    break
+                end
+            end
+        end
+
+        if #events == 0 then
+            self.events = nil
+            self.attention = nil
+        else
+            for _, attr in ipairs(requires) do
+                attention[attr] = attention[attr] - 1
+                if attention[attr] <= 0 then
+                    attention[attr] = nil
+                end
+            end
+        end
     end
 end
 
