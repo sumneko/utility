@@ -55,12 +55,13 @@ function System:define(name, simple, min, max)
     return define
 end
 
+---@param customData? any
 ---@return Attribute.Instance
-function System:instance()
+function System:instance(customData)
     self:compile()
     local instance = API.createInstance(self)
 
-    return instance:init(self)
+    return instance:init(self, customData)
 end
 
 function System:compile()
@@ -753,11 +754,13 @@ Instance.__index = Instance
 
 ---@package
 ---@param system Attribute.System
+---@param customData? any
 ---@return Attribute.Instance
-function Instance:init(system)
+function Instance:init(system, customData)
     self.system  = system
     self.cache   = {}
     self.methods = system.methods
+    self.customData = customData
     return self
 end
 
