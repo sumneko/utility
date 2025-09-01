@@ -68,13 +68,15 @@ local encodeMethods;encodeMethods = {
         end
     end,
     ['string'] = function (value, buf, ex)
-        local ref = ex.refMap[value]
-        if ref then
-            buf[#buf+1] = Ref
-            encodeMethods['number'](ref, buf)
-            return
-        end
         local len = #value
+        if len > RefStrLen then
+            local ref = ex.refMap[value]
+            if ref then
+                buf[#buf+1] = Ref
+                encodeMethods['number'](ref, buf)
+                return
+            end
+        end
         if len == 1 then
             buf[#buf+1] = Char1 .. value
         elseif len == 2 then
