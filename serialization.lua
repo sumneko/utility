@@ -67,7 +67,13 @@ local encodeMethods;encodeMethods = {
             buf[#buf+1] = Number .. stringPack('n', value)
         end
     end,
-    ['string'] = function (value, buf)
+    ['string'] = function (value, buf, ex)
+        local ref = ex.refMap[value]
+        if ref then
+            buf[#buf+1] = Ref
+            encodeMethods['number'](ref, buf)
+            return
+        end
         local len = #value
         if len == 1 then
             buf[#buf+1] = Char1 .. value
@@ -82,6 +88,10 @@ local encodeMethods;encodeMethods = {
         else
             error('不支持这么长的字符串！')
         end
+        if len > RefStrLen then
+            ex.refid = ex.refid + 1
+            ex.refMap[value] = ex.refid
+        end
     end,
     ['boolean'] = function (value, buf)
         if value then
@@ -94,7 +104,7 @@ local encodeMethods;encodeMethods = {
         buf[#buf+1] = Nil
     end,
     ['table'] = function (value, buf, ex, disableHook)
-        local ref = ex.tableMap[value]
+        local ref = ex.refMap[value]
         if ref then
             buf[#buf+1] = Ref
             encodeMethods['number'](ref, buf)
@@ -112,7 +122,7 @@ local encodeMethods;encodeMethods = {
         end
 
         ex.refid = ex.refid + 1
-        ex.tableMap[value] = ex.refid
+        ex.refMap[value] = ex.refid
         buf[#buf+1] = MixB
 
         local i = 1
@@ -149,11 +159,11 @@ function M.encode(data, hook, ignoreUnknownType)
     end
     local buf = {}
     local refid = 0
-    local tableMap = {}
+    local refMap = {}
 
     encode(data, buf, {
         refid = refid,
-        tableMap = tableMap,
+        refMap = refMap,
         hook = hook,
         ignoreUnknownType = ignoreUnknownType,
     })
