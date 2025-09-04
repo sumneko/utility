@@ -143,9 +143,10 @@ function System:updateEvent()
     for i = 1, len do
         local instance = list[i]
         local events = instance.events
-        ---@cast events -?
-        for j = 1, #events do
-            events[j](instance)
+        if events then
+            for j = 1, #events do
+                events[j](instance)
+            end
         end
     end
 end
