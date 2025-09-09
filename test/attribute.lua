@@ -249,6 +249,21 @@ do
     assert(values[6] == 300)
 end
 
+
+do
+    local system = attributeSystem.create()
+
+    system:enableUnknown()
+
+    local instance = system:instance()
+
+    instance:set('未知属性', 1000)
+    assert(instance:get('未知属性') == 1000)
+
+    instance:add('未知属性', 500)
+    assert(instance:get('未知属性') == 1500)
+end
+
 -------------- 性能测试 -------------
 
 do

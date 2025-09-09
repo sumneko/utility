@@ -3,6 +3,7 @@ local API = {}
 
 ---@class Attribute.System
 ---@field package compiled? boolean
+---@field package supportUnknown? boolean
 ---@field package defines table<string, Attribute.Define>
 ---@field package methods table<string, Attribute.Method>
 ---@field package links table<string, string[]>
@@ -149,6 +150,10 @@ function System:updateEvent()
             end
         end
     end
+end
+
+function System:enableUnknown()
+    self.supportUnknown = true
 end
 
 ---@class Attribute.Define
@@ -772,6 +777,10 @@ end
 function Instance:set(name, value)
     local method = self.methods[name]
     if not method then
+        if self.system.supportUnknown then
+            self.cache[name] = value
+            return
+        end
         error('Unknown attribute: ' .. name)
     end
     method.set(self, value)
@@ -785,6 +794,10 @@ end
 function Instance:add(name, value)
     local method = self.methods[name]
     if not method then
+        if self.system.supportUnknown then
+            self.cache[name] = (self.cache[name] or 0) + value
+            return
+        end
         error('Unknown attribute: ' .. name)
     end
     method.add(self, value)
@@ -798,6 +811,9 @@ end
 function Instance:get(name)
     local method = self.methods[name]
     if not method then
+        if self.system.supportUnknown then
+            return self.cache[name] or 0
+        end
         error('Unknown attribute: ' .. name)
     end
     return method.get(self)
