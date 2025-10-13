@@ -110,7 +110,7 @@ function M.declare(name, super, superInit)
     end
 
     function class:__index(k)
-        if next(class.__getter) then
+        if next(getter) then
             class.__index = getterFunc
             return getterFunc(self, k)
         else
@@ -120,7 +120,7 @@ function M.declare(name, super, superInit)
     end
 
     function class:__newindex(k, v)
-        if next(class.__setter) then
+        if next(setter) then
             class.__newindex = setterFunc
             setterFunc(self, k, v)
         else
