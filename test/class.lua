@@ -439,6 +439,7 @@ test('访问默认属性', function ()
     g1.x = 1
 
     local t = class.new 'G1' ()
+    assert(t.x == 1)
     for _ = 1, count do
         local x = t.x
     end
@@ -453,6 +454,7 @@ test('访问getter', function ()
     end
 
     local t = class.new 'G2' ()
+    assert(t.x == 1)
     for _ = 1, count do
         local x = t.x
     end
@@ -469,7 +471,66 @@ test('访问默认属性（有getter时）', function ()
     g3.y = 2
 
     local t = class.new 'G3' ()
+    assert(t.y == 2)
     for _ = 1, count do
         local y = t.y
     end
+end)
+
+test('写入属性', function ()
+    ---@class G1
+    local g1 = class.declare 'G1'
+
+    g1.x = 1
+
+    local t = class.new 'G1' ()
+    for _ = 1, count do
+        t.x = 2
+    end
+    assert(t.x == 2)
+
+    local t2 = class.new 'G1' ()
+    assert(t2.x == 1)
+end)
+
+test('访问setter', function ()
+    ---@class G2: Class.Base
+    local g2 = class.declare 'G2'
+
+    g2.y = 1
+
+    function g2.__setter:x(value)
+        self.y = value
+    end
+
+    local t = class.new 'G2' ()
+    assert(t.y == 1)
+    for _ = 1, count do
+        t.x = 2
+    end
+    assert(t.y == 2)
+
+    local t2 = class.new 'G2' ()
+    assert(t2.y == 1)
+end)
+
+test('写入属性（有setter时）', function ()
+    ---@class G3: Class.Base
+    local g3 = class.declare 'G3'
+
+    function g3.__setter:x(value)
+        self.y = value
+    end
+
+    g3.y = 2
+
+    local t = class.new 'G3' ()
+    assert(t.y == 2)
+    for _ = 1, count do
+        t.y = 3
+    end
+    assert(t.y == 3)
+
+    local t2 = class.new 'G3' ()
+    assert(t2.y == 2)
 end)
