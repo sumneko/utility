@@ -1,0 +1,6 @@
+{
+    "diagnostics.globals": [
+        "tracy"
+    ],
+    "runtime.version": "Lua 5.5"
+}
