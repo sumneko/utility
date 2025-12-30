@@ -1,8 +1,8 @@
 local new_sandbox = require 'sandbox'
 
-local sandbox = new_sandbox('test', 'test.sandbox_test.script')
+local sandbox = new_sandbox('test', 'test.sandbox_test')
 
-sandbox:require 'test.sandbox_test.main'
+sandbox.require 'main'
 
 assert(RESULTS == nil)
 assert(type(sandbox.env.RESULTS) == 'table')

@@ -2,8 +2,10 @@
 local M = {}
 M.__index = M
 
-local function make_env()
+function M:make_env()
     local env = {}
+    self.env = env
+
     env._G = env
     env._VERSION = _VERSION
     env.assert = assert
@@ -19,7 +21,6 @@ local function make_env()
     env.rawget = rawget
     env.rawlen = rawlen
     env.rawset = rawset
-    --env.require = require
     env.select = select
     env.setmetatable = setmetatable
     env.tonumber = tonumber
@@ -77,8 +78,11 @@ local function make_env()
     env.package.loaded = {}
     env.package.preload = {}
     env.package.path = '?.lua;?/init.lua'
-    env.package.searchers = {}
-    env.package.searchpath = package.searchpath
+    env.package.searchers = {
+        [1] = self:make_preload(),
+        [2] = self:make_searcher(),
+    }
+    env.package.searchpath = self:make_packagesearchpath()
 
     env.string = {}
     env.string.byte = string.byte
@@ -116,27 +120,38 @@ local function make_env()
     env.utf8.len = utf8.len
     env.utf8.offset = utf8.offset
 
+    env.debug = {}
+    env.debug.getinfo = self:make_debuggetinfo()
+    env.debug.setmetatable = self:make_debugsetmetatable()
+    env.debug.traceback = debug.traceback
+    env.debug.upvalueid = debug.upvalueid
+
+    env.io = {}
+    env.io.stderr = io.stderr
+    env.io.type = io.type
+
+    env.require = self:make_require()
+
     return env
+end
+
+local function split(str, sep)
+    local result = {}
+    for part in string.gmatch(str, '([^' .. sep .. ']+)') do
+        result[#result+1] = part
+    end
+    return result
 end
 
 ---@private
 function M:make_searcher()
-    local searchers = package.searchers
-    local prefix_name = self.prefix_name
     return function (name)
-        if prefix_name then
-            name = prefix_name .. '.' .. name
+        local path, err = self.env.package.searchpath(name, self.env.package.path)
+        if not path then
+            return err
         end
-        local msg = ''
-        for _, searcher in ipairs(searchers) do
-            local f, extra = searcher(name)
-            if type(f) == 'function' then
-                return f, extra
-            elseif type(f) == 'string' then
-                msg = msg .. f
-            end
-        end
-        return msg
+        local f = assert(loadfile(path, 't', self.env))
+        return f
     end
 end
 
@@ -169,7 +184,7 @@ function M:make_require(searchers, loaded)
         end
         error(("module '%s' not found:%s"):format(name, msg))
     end
-    return function (name)
+    self.require = function (name)
         assert(type(name) == "string", ("bad argument #1 to 'require' (string expected, got %s)"):format(type(name)))
         local p = loaded[name]
         if p ~= nil then
@@ -186,6 +201,69 @@ function M:make_require(searchers, loaded)
         loaded[name] = res
         return res
     end
+
+    return self.require
+end
+
+function M:make_debuggetinfo()
+    local debug_getinfo = debug.getinfo
+    local type = type
+    return function (f, ...)
+        if type(f) == 'number' then
+            f = f + 1
+        end
+        local result = debug_getinfo(f, ...)
+        if not result then
+            return nil
+        end
+        result.func = nil
+        return result
+    end
+end
+
+function M:make_debugsetmetatable()
+    local type = type
+    local debug_setmetatable = debug.setmetatable
+    return function (t, mt)
+        if type(t) == 'table'
+        or type(t) == 'userdata' then
+            return setmetatable(t, mt)
+        else
+            return debug_setmetatable(t, mt)
+        end
+    end
+end
+
+function M:make_packagesearchpath()
+    local io_open = io.open
+    local string_gsub = string.gsub
+    return function (name, path, sep, rep)
+        local configs = split(self.env.package.config, '\r\n')
+        sep = sep or '.'
+        rep = rep or configs[1]
+        name = string_gsub(name, '%' .. sep, rep)
+        local pp
+        if self.prefix_name then
+            pp = string_gsub(self.prefix_name, '%' .. configs[3], name)
+            pp = string_gsub(pp, '%' .. sep, rep)
+        end
+        local msg = ''
+        local paths = split(path, configs[2])
+        for i = 1, #paths do
+            local filepath = string_gsub(paths[i], '%' .. configs[3], name)
+            if pp then
+                filepath = pp .. rep .. filepath
+            end
+            local f = io_open(filepath, 'r')
+            if f then
+                f:close()
+                return filepath
+            end
+            msg = msg .. ("\n\tno file '%s'"):format(filepath)
+        end
+
+        return nil, msg
+    end
 end
 
 ---@package
@@ -197,15 +275,7 @@ function M:init(sandbox_name, prefix_name)
     ---@type string?
     self.prefix_name = prefix_name
     ---@type table
-    self.env = make_env()
-    self.env.package.searchers[1] = self:make_preload()
-    self.env.package.searchers[2] = self:make_searcher()
-    self.env.require = self:make_require()
-end
-
-function M:require(name)
-    local require = self:make_require(package.searchers, package.loaded)
-    return require(name)
+    self:make_env()
 end
 
 ---@param name string
