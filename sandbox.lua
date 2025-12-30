@@ -27,6 +27,7 @@ function M:make_env()
     env.tostring = tostring
     env.type = type
     env.xpcall = xpcall
+    env.load = self:make_load()
 
     env.coroutine = {}
     env.coroutine.close = coroutine.close
@@ -263,6 +264,13 @@ function M:make_packagesearchpath()
         end
 
         return nil, msg
+    end
+end
+
+function M:make_load()
+    local load = load
+    return function (chunk, chunkname, mode, env)
+        return load(chunk, chunkname, 't', env)
     end
 end
 
