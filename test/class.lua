@@ -1,3 +1,4 @@
+---@diagnostic disable: undefined-field, inject-field
 local class = require 'class'
 
 ---@class A
@@ -367,7 +368,7 @@ local function test(task, callback)
     collectgarbage 'stop'
     local clock = os.clock()
     callback()
-    print(task, os.clock() - clock)
+    print(task, ('%.3f'):format(os.clock() - clock))
     collectgarbage 'restart'
 end
 

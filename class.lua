@@ -37,9 +37,12 @@ M._errorHandler = error
 ---@field package initCalls?   false|fun(...)[]
 local Config = {}
 
----@param name string
+---@param name string | table
 ---@return Class.Config
 function M.getConfig(name)
+    if type(name) == 'table' then
+        name = name.__name
+    end
     if not M._classConfig[name] then
         M._classConfig[name] = setmetatable({
             name         = name,
@@ -110,7 +113,7 @@ function M.declare(name, super, superInit)
     end
 
     function class:__index(k)
-        if next(getter) then
+        if next(class.__getter) then
             class.__index = getterFunc
             return getterFunc(self, k)
         else
@@ -120,7 +123,7 @@ function M.declare(name, super, superInit)
     end
 
     function class:__newindex(k, v)
-        if next(setter) then
+        if next(class.__setter) then
             class.__newindex = setterFunc
             setterFunc(self, k, v)
         else
@@ -192,7 +195,7 @@ end
 ---@generic T: string
 ---@param name `T`
 ---@param tbl? table
----@return T
+---@return T | fun(...):T
 function M.new(name, tbl)
     local class = M._classes[name]
     if not class then
@@ -264,7 +267,7 @@ end
 
 ---@generic Class: string
 ---@generic Extends: string
----@param name `Class`
+---@param name `Class` | table
 ---@param extendsName `Extends`
 ---@param init? fun(self: Class, super: Extends, ...)
 function M.extends(name, extendsName, init)
@@ -487,6 +490,15 @@ function M.isInstanceOf(obj, targetName)
     end
 
     return isInstanceMap[myName][targetName]
+end
+
+--- 清理一个对象的缓存数据（对应 `__getter` 的字段）
+---@param obj Class.Base
+function M.flush(obj)
+    local getter = obj.__getter
+    for k in pairs(getter) do
+        obj[k] = nil
+    end
 end
 
 return M
