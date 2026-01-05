@@ -57,7 +57,6 @@ function M.getConfig(name)
             extendsCalls = {},
             extendsKeys  = {},
             compress     = {},
-            compressMap  = {},
         }, { __index = Config })
     end
     return M._classConfig[name]
