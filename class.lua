@@ -1,3 +1,7 @@
+local tableCreate = table.create
+local rawset = rawset
+local rawget = rawget
+
 ---@class Class
 local M = {}
 
@@ -25,6 +29,7 @@ M._errorHandler = error
 ---@field public  __getter table
 ---@field public  __setter table
 ---@field public  __super  Class.Base
+---@field package __config Class.Config
 
 ---@class Class.Config
 ---@field private name         string
@@ -35,6 +40,7 @@ M._errorHandler = error
 ---@field package superClass?  Class.Base
 ---@field public  getter       table<any, fun(obj: any)>
 ---@field package initCalls?   false|fun(...)[]
+---@field package compress     string[]
 local Config = {}
 
 ---@param name string | table
@@ -50,6 +56,8 @@ function M.getConfig(name)
             superCache   = {},
             extendsCalls = {},
             extendsKeys  = {},
+            compress     = {},
+            compressMap  = {},
         }, { __index = Config })
     end
     return M._classConfig[name]
@@ -71,9 +79,49 @@ function M.declare(name, super, superInit)
     local class  = {}
     local getter = {}
     local setter = {}
+    local keyMap = {}
     class.__name   = name
     class.__getter = getter
     class.__setter = setter
+    class.__config = config
+
+    local function buildKeyMap()
+        local i = 0
+        for _, k in ipairs(config.compress) do
+            if keyMap[k] == nil then
+                i = i + 1
+                keyMap[k] = i
+            end
+        end
+    end
+
+    ---@param self any
+    ---@param k any
+    ---@return any
+    local function getterFuncWithCompress(self, k)
+        local ik = keyMap[k]
+        if ik then
+            local v = rawget(self, ik)
+            if v ~= nil then
+                return v
+            end
+        end
+        local r = class[k]
+        if r == nil then
+            local f = getter[k]
+            if f then
+                local res, needCache = f(self)
+                if needCache then
+                    rawset(self, ik or k, res)
+                end
+                return res
+            else
+                return nil
+            end
+        else
+            return r
+        end
+    end
 
     ---@param self any
     ---@param k any
@@ -100,6 +148,29 @@ function M.declare(name, super, superInit)
     ---@param k any
     ---@param v any
     ---@return any
+    local function setterFuncWithCompress(self, k, v)
+        local ik = keyMap[k]
+        if ik then
+            if rawget(self, ik) ~= nil then
+                rawset(self, ik, v)
+                return
+            end
+        end
+        local f = setter[k]
+        if f then
+            local res = f(self, v)
+            if res ~= nil then
+                rawset(self, ik or k, res)
+            end
+        else
+            rawset(self, ik or k, v)
+        end
+    end
+
+    ---@param self any
+    ---@param k any
+    ---@param v any
+    ---@return any
     local function setterFunc(self, k, v)
         local f = setter[k]
         if f then
@@ -113,9 +184,15 @@ function M.declare(name, super, superInit)
     end
 
     function class:__index(k)
-        if next(class.__getter) then
-            class.__index = getterFunc
-            return getterFunc(self, k)
+        if next(class.__getter) or #config.compress > 0 then
+            if #config.compress > 0 then
+                buildKeyMap()
+                class.__index = getterFuncWithCompress
+                return getterFuncWithCompress(self, k)
+            else
+                class.__index = getterFunc
+                return getterFunc(self, k)
+            end
         else
             class.__index = class
             return class[k]
@@ -123,9 +200,15 @@ function M.declare(name, super, superInit)
     end
 
     function class:__newindex(k, v)
-        if next(class.__setter) then
-            class.__newindex = setterFunc
-            setterFunc(self, k, v)
+        if next(class.__setter) or #config.compress > 0 then
+            if #config.compress > 0 then
+                buildKeyMap()
+                class.__newindex = setterFuncWithCompress
+                return setterFuncWithCompress(self, k, v)
+            else
+                class.__newindex = setterFunc
+                setterFunc(self, k, v)
+            end
         else
             class.__newindex = nil
             rawset(self, k, v)
@@ -211,7 +294,11 @@ function M.new(name, tbl)
     end
 
     if not tbl then
-        tbl = {}
+        if tableCreate then
+            tbl = tableCreate(#class.__config.compress, 2)
+        else
+            tbl = {}
+        end
     end
     tbl.__class__ = name
 
@@ -419,6 +506,10 @@ function Config:extends(extendsName, init)
                 class.__setter[k] = v
             end
         end
+        local config = M.getConfig(extendsName)
+        for _, k in ipairs(config.compress) do
+            self.compress[#self.compress+1] = k
+        end
     end
 
     do --记录父类的init方法
@@ -499,6 +590,13 @@ function M.flush(obj)
     for k in pairs(getter) do
         obj[k] = nil
     end
+end
+
+---@param name string | table
+---@param keys string[]
+function M.compressKeys(name, keys)
+    local config = M.getConfig(name)
+    config.compress = keys
 end
 
 return M

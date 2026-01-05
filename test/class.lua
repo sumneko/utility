@@ -535,3 +535,78 @@ test('写入属性（有setter时）', function ()
     local t2 = class.new 'G3' ()
     assert(t2.y == 2)
 end)
+
+test('综合读写（有getter，无compress）', function ()
+    ---@class H1: Class
+    local h1 = class.declare 'H1'
+
+    h1.__getter.x = function ()
+        return 1
+    end
+
+    local t = class.new 'H1' ()
+    for _ = 1, count do
+        t.y = t.x + 1
+        t.a = t.y + 1
+        t.b = t.a + 1
+    end
+
+    assert(t.y == 2)
+    assert(t.a == 3)
+    assert(t.b == 4)
+end)
+
+test('综合读写（有getter，有compress）', function ()
+    ---@class H2: Class
+    local h2 = class.declare 'H2'
+    class.compressKeys('H2', { 'x', 'y', 'a', 'b' })
+
+    h2.__getter.x = function ()
+        return 1
+    end
+
+    local t = class.new 'H2' ()
+    for _ = 1, count do
+        t.y = t.x + 1
+        t.a = t.y + 1
+        t.b = t.a + 1
+    end
+
+    assert(t.y == 2)
+    assert(t.a == 3)
+    assert(t.b == 4)
+end)
+
+test('compress内存比较', function ()
+    local t1List = {}
+    local t2List = {}
+    collectgarbage()
+    collectgarbage 'stop'
+
+    local mem1 = collectgarbage 'count'
+    for n = 1, 10000 do
+        local t = class.new 'H1' ()
+        t.x = 1
+        t.y = 2
+        t.a = 3
+        t.b = 4
+        t1List[n] = t
+    end
+    local usage1 = collectgarbage 'count' - mem1
+    print('H1内存使用:', ('%.3f KB'):format(usage1))
+
+    collectgarbage()
+    local mem2 = collectgarbage 'count'
+    for n = 1, 10000 do
+        local t = class.new 'H2' ()
+        t.x = 1
+        t.y = 2
+        t.a = 3
+        t.b = 4
+        t2List[n] = t
+    end
+    local usage2 = collectgarbage 'count' - mem2
+    print('H2内存使用:', ('%.3f KB'):format(usage2))
+
+    collectgarbage 'restart'
+end)
