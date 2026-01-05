@@ -1,4 +1,3 @@
-local tableCreate = table.create
 local rawset = rawset
 local rawget = rawget
 
@@ -78,13 +77,16 @@ function M.declare(name, super, superInit)
     local class  = {}
     local getter = {}
     local setter = {}
-    local keyMap = {}
+    local keyMap
     class.__name   = name
     class.__getter = getter
     class.__setter = setter
     class.__config = config
 
     local function buildKeyMap()
+        if keyMap then
+            return
+        end
         local used = {}
         for _, k in ipairs(config.compress) do
             used[k] = true
@@ -96,6 +98,7 @@ function M.declare(name, super, superInit)
                 return false
             end
             t[k] = i
+            t[i] = k
             i = i + 1
             return t[k]
         end })
@@ -221,6 +224,29 @@ function M.declare(name, super, superInit)
         end
     end
 
+    function class:__pairs()
+        if #config.compress == 0 then
+            class.__pairs = nil
+            return next, self, nil
+        end
+        buildKeyMap()
+        return function (_, k)
+            local ik
+            local tp = type(k)
+            if tp == 'number' then
+                ik = k
+                k = rawget(keyMap, k)
+            elseif tp == 'string' then
+                ik = rawget(keyMap, k)
+                if not ik then
+                    return nil, nil
+                end
+            end
+            local nk, nv = next(self, ik)
+            return rawget(keyMap, nk) or nk, nv
+        end, self, nil
+    end
+
     function class:__encode()
         return self
     end
@@ -300,11 +326,7 @@ function M.new(name, tbl)
     end
 
     if not tbl then
-        if tableCreate then
-            tbl = tableCreate(#class.__config.compress, 2)
-        else
-            tbl = {}
-        end
+        tbl = {}
     end
     tbl.__class__ = name
 
