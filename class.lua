@@ -98,7 +98,6 @@ function M.declare(name, super, superInit)
                 return false
             end
             t[k] = i
-            t[i] = k
             i = i + 1
             return t[k]
         end })
