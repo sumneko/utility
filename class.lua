@@ -85,13 +85,20 @@ function M.declare(name, super, superInit)
     class.__config = config
 
     local function buildKeyMap()
-        local i = 0
+        local used = {}
         for _, k in ipairs(config.compress) do
-            if keyMap[k] == nil then
-                i = i + 1
-                keyMap[k] = i
-            end
+            used[k] = true
         end
+        local i = 1
+        keyMap = setmetatable({}, { __index = function (t, k)
+            if not used[k] then
+                t[k] = false
+                return false
+            end
+            t[k] = i
+            i = i + 1
+            return t[k]
+        end })
     end
 
     ---@param self any
