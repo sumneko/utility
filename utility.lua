@@ -26,6 +26,7 @@ local inf          = 1 / 0
 local nan          = 0 / 0
 local error        = error
 local assert       = assert
+local clock        = os.clock
 
 _ENV = nil
 
@@ -654,7 +655,7 @@ function m.eachLine(text, keepNL)
     end
 end
 
----@alias SortByScoreCallback fun(o: any): integer
+---@alias SortByScoreCallback fun(o: any): number
 
 -- 按照分数排序，分数越高越靠前
 ---@param tbl any[]
@@ -743,6 +744,12 @@ function m.trim(str, mode)
         return (str:gsub('%s+$', ''))
     end
     return (str:match '^%s*(.-)%s*$')
+end
+
+---@param str string
+---@return string
+function m.firstLine(str)
+    return str:match('([^\r\n]*)')
 end
 
 ---@param path string
@@ -970,10 +977,19 @@ function m.arrayInsert(array, value)
     end
 end
 
-function m.arrayRemove(array, value)
+---@generic T
+---@param array T[]
+---@param value T
+---@param noOrder? boolean
+function m.arrayRemove(array, value, noOrder)
     for i = 1, #array do
         if array[i] == value then
-            tableRemove(array, i)
+            if noOrder then
+                array[i] = array[#array]
+                array[#array] = nil
+            else
+                tableRemove(array, i)
+            end
             return
         end
     end
@@ -994,9 +1010,39 @@ function m.arrayOverlap(a1, a2)
     return result
 end
 
+---@generic T
+---@param total T[]
+---@param part T[]
+---@return T[]
+function m.arrayDiff(total, part)
+    local diff = {}
+
+    local partSet = m.arrayToHash(part)
+    for i = 1, #total do
+        local v = total[i]
+        if not partSet[v] then
+            diff[#diff+1] = v
+        end
+    end
+
+    return diff
+end
+
 m.MODE_K  = { __mode = 'k' }
 m.MODE_V  = { __mode = 'v' }
 m.MODE_KV = { __mode = 'kv' }
+
+function m.weakTable(t)
+    return setmetatable(t or {}, m.MODE_KV)
+end
+
+function m.weakKTable(t)
+    return setmetatable(t or {}, m.MODE_K)
+end
+
+function m.weakVTable(t)
+    return setmetatable(t or {}, m.MODE_V)
+end
 
 ---@generic T: fun(param: any):any
 ---@param func T
@@ -1019,6 +1065,31 @@ function m.tableMerge(a, b)
         a[k] = v
     end
     return a
+end
+
+function m.tableDefault(a, b)
+    for k, v in pairs(b) do
+        if a[k] == nil then
+            a[k] = v
+        end
+    end
+    return a
+end
+
+---@param a table
+---@param b table
+---@param recursive boolean
+function m.tableExtends(a, b, recursive)
+    for k, v in pairs(b) do
+        if recursive and type(v) == 'table' then
+            if type(a[k]) ~= 'table' then
+                a[k] = {}
+            end
+            m.tableExtends(a[k], v, true)
+        else
+            a[k] = v
+        end
+    end
 end
 
 ---@param a any[]
@@ -1188,7 +1259,7 @@ function m.enableFormatString()
     mt.__mod = function (str, args)
         local count = 0
         return str:gsub('%b{}', function (key)
-            local k, fmt = key:match('^{(.-):(.+)}$')
+            local k, fmt = key:match('^{(.-)(%%.+)}$')
             if not k then
                 k = key:sub(2, -2)
             end
@@ -1199,11 +1270,14 @@ function m.enableFormatString()
             else
                 value = args[k]
             end
-            if value == nil and k:find('{', 1, true) then
-                return '{' .. k % args .. '}'
+            if value == nil then
+                local inside = key:sub(2, -2)
+                if inside:find('{', 1, true) then
+                    return '{' .. inside % args .. '}'
+                end
             end
             if fmt then
-                value = stringFormat('%' .. fmt, value)
+                value = stringFormat(fmt, value)
             else
                 value = tostring(value)
             end
@@ -1230,6 +1304,14 @@ function m.enableDividStringAsPath()
         end
         return str .. '/' .. path
     end
+end
+
+function m.enableFalswallow()
+    setmetatable(false, {
+        __index = function ()
+            return false
+        end
+    })
 end
 
 ---@param str string
@@ -1293,6 +1375,33 @@ function m.asKey(str)
         return str
     end
     return ('[%q]'):format(str)
+end
+
+---@param job function
+---@param finish fun(duration: number)
+---@return any
+function m.withDuration(job, finish)
+    local startTime = clock()
+    local result = job()
+    local endTime = clock()
+    finish(endTime - startTime)
+    return result
+end
+
+---@generic T
+---@param obj T
+---@param visited? table<T, boolean>
+---@return table<T, boolean>?
+function m.visited(obj, visited)
+    if visited then
+        if visited[obj] then
+            return nil
+        end
+        visited[obj] = true
+        return visited
+    else
+        return { [obj] = true }
+    end
 end
 
 --- `[id: any, start: integer, finish: integer]`
