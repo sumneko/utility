@@ -1295,6 +1295,8 @@ function m.asKey(str)
     return ('[%q]'):format(str)
 end
 
+--- `[id: any, start: integer, finish: integer]`
+--- 必须保证 layers 已经按 start 升序排列，为光标位置
 ---@param layers [any, integer, integer][]
 ---@return [any, integer, integer][]
 function m.mergeLayers(layers)
