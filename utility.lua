@@ -1404,10 +1404,10 @@ function m.visited(obj, visited)
     end
 end
 
---- `[id: any, start: integer, finish: integer]`
+--- `[start: integer, finish: integer, id?: any, ]`
 --- 必须保证 layers 已经按 start 升序排列，为光标位置
----@param layers [any, integer, integer][]
----@return [any, integer, integer][]
+---@param layers [integer, integer, any][]
+---@return [integer, integer, any][]
 function m.mergeLayers(layers)
     local desk = {}
     local result = {}
@@ -1418,26 +1418,26 @@ function m.mergeLayers(layers)
             return
         end
 
-        local id, _, e = top[1], top[2], top[3]
+        local _, e, id = top[1], top[2], top[3]
         if e <= start then
             desk[#desk] = nil
             return checkDesk(start, finish)
         elseif e > finish then
-            result[#result+1] = { id, start, finish }
+            result[#result+1] = { start, finish, id }
             return
         else
-            result[#result+1] = { id, start, e }
+            result[#result+1] = { start, e, id }
             desk[#desk] = nil
             return checkDesk(e, finish)
         end
     end
 
     for i, layer in ipairs(layers) do
-        local id, s, e = layer[1], layer[2], layer[3]
+        local s, e, id = layer[1], layer[2], layer[3]
         local nextLayer = layers[i + 1]
-        local nextStart = nextLayer and nextLayer[2] or mathHuge
+        local nextStart = nextLayer and nextLayer[1] or mathHuge
         if e > nextStart then
-            result[#result+1] = { id, s, nextStart }
+            result[#result+1] = { s, nextStart, id }
             desk[#desk+1] = layer
             goto continue
         end
