@@ -68,4 +68,26 @@ do
     print('util.sortK time:', c2 - c1)
 end
 
+do
+    local layers = {
+        { 'a', 0,  10 },
+        { 'b', 3,  7  },
+        { 'c', 5,  7  },
+        { 'd', 8,  9  },
+        { 'e', 15, 20 },
+    }
+
+    local result = util.mergeLayers(layers)
+
+    assert(util.equal(result, {
+        { 'a', 0,  3  },
+        { 'b', 3,  5  },
+        { 'c', 5,  7  },
+        { 'a', 7,  8  },
+        { 'd', 8,  9  },
+        { 'a', 9,  10 },
+        { 'e', 15, 20 },
+    }))
+end
+
 print('ok')

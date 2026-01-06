@@ -1295,4 +1295,49 @@ function m.asKey(str)
     return ('[%q]'):format(str)
 end
 
+---@param layers [any, integer, integer][]
+---@return [any, integer, integer][]
+function m.mergeLayers(layers)
+    local desk = {}
+    local result = {}
+
+    local function checkDesk(start, finish)
+        local top = desk[#desk]
+        if not top then
+            return
+        end
+
+        local id, _, e = top[1], top[2], top[3]
+        if e <= start then
+            desk[#desk] = nil
+            return checkDesk(start, finish)
+        elseif e > finish then
+            result[#result+1] = { id, start, finish }
+            return
+        else
+            result[#result+1] = { id, start, e }
+            desk[#desk] = nil
+            return checkDesk(e, finish)
+        end
+    end
+
+    for i, layer in ipairs(layers) do
+        local id, s, e = layer[1], layer[2], layer[3]
+        local nextLayer = layers[i + 1]
+        local nextStart = nextLayer and nextLayer[2] or mathHuge
+        if e > nextStart then
+            result[#result+1] = { id, s, nextStart }
+            desk[#desk+1] = layer
+            goto continue
+        end
+        result[#result+1] = layer
+        if e < nextStart then
+            checkDesk(e, nextStart)
+        end
+        ::continue::
+    end
+
+    return result
+end
+
 return m
