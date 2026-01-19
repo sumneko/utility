@@ -799,6 +799,10 @@ end
 ---@param name string
 ---@return number
 function Instance:get(name)
+    local value = self.cache[name]
+    if value then
+        return value
+    end
     local method = self.methods[name]
     if not method then
         if self.system.supportUnknown then
