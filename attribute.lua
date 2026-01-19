@@ -173,6 +173,7 @@ Define.__index = Define
 ---@package
 ---@param system Attribute.System
 ---@param name string
+---@return Attribute.Define
 function Define:init(system, name)
     self.system = system
     self.name = name
@@ -904,6 +905,7 @@ end
 ---@package
 ---@param system Attribute.System
 ---@param name string
+---@return Attribute.Define
 function API.createDefine(system, name)
     return setmetatable({}, Define):init(system, name)
 end
