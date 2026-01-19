@@ -308,8 +308,9 @@ local function simplifyCode(code)
 end
 
 local function loadCode(str, params)
+    str = 'return function (instance, value)\n' .. str .. '\nend'
     local code = simplifyCode(format(str, params))
-    return assert(load(code, code, 't'))
+    return assert(load(code, code, 't'))()
 end
 
 ---@package
@@ -537,7 +538,6 @@ end
 ---@package
 function Define:compileCheckAttention(name)
     return loadCode([[
-local instance = ...
 if not instance.attention[{name}] then
     return
 end
@@ -566,7 +566,6 @@ function Define:compileSimple()
     }
     methods[name] = {
         set = loadCode([[
-local instance, value = ...
 local cache = instance.cache
 local methods = instance.methods
 {saveTouch:s}
@@ -577,7 +576,6 @@ cache[{name}] = value
 {updateLink:s}
 ]], params),
         add = loadCode([[
-local instance, value = ...
 local cache = instance.cache
 local methods = instance.methods
 if cache[{name}] then
@@ -591,17 +589,14 @@ cache[{name}] = value
 {updateLink:s}
 ]], params),
         get = loadCode([[
-local instance = ...
 local cache = instance.cache
 return cache[{name}] or 0
 ]], params),
         getMin = loadCode([[
-local instance = ...
 local methods = instance.methods
 return {getMin:s}
 ]], params),
         getMax = loadCode([[
-local instance = ...
 local methods = instance.methods
 return {getMax:s}
 ]], params),
@@ -630,7 +625,6 @@ function Define:compileComplex()
             params.key = key
             methods[key] = {
                 set = loadCode([[
-local instance, value = ...
 local cache = instance.cache
 local methods = instance.methods
 {saveTouch:s}
@@ -640,7 +634,6 @@ cache[{name}] = nil
 {updateLink:s}
 ]], params),
                 add = loadCode([[
-local instance, value = ...
 local cache = instance.cache
 local methods = instance.methods
 {saveTouch:s}
@@ -654,7 +647,6 @@ cache[{name}] = nil
 {updateLink:s}
 ]], params),
                 get = loadCode([[
-local instance = ...
 local cache = instance.cache
 return cache[{key}] or 0
 ]], params),
@@ -687,7 +679,6 @@ return cache[{key}] or 0
             error('Attribute "' .. name .. '" is readonly.')
         end,
         get = loadCode([[
-local instance = ...
 local cache = instance.cache
 local methods = instance.methods
 local value = cache[{name}]
@@ -701,12 +692,10 @@ cache[{name}] = value
 return value
 ]], params),
         getMin = loadCode([[
-local instance = ...
 local methods = instance.methods
 return {getMin:s}
 ]], params),
         getMax = loadCode([[
-local instance = ...
 local methods = instance.methods
 return {getMax:s}
 ]], params),
