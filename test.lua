@@ -1,3 +1,5 @@
+print('开始测试', _VERSION)
+
 dofile 'test/util.lua'
 dofile 'test/proxy.lua'
 dofile 'test/rtable.lua'

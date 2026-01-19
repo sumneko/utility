@@ -1,6 +1,23 @@
 local rawset = rawset
 local rawget = rawget
 
+local tablecreatef = setmetatable({}, { __index = function (t, k)
+    local buf = {}
+    buf[#buf+1] = 'return function () return {'
+    for i = 1, k do
+        buf[#buf+1] = 'x' .. i .. ' = nil,'
+    end
+    buf[#buf+1] = '} end'
+    local content = table.concat(buf, '')
+    local f = assert(load(content, content))()
+    t[k] = f
+    return f
+end })
+
+local tablecreate = table.create or function (_, nrec)
+    return tablecreatef[nrec]()
+end
+
 ---@class Class
 local M = {}
 
@@ -40,6 +57,7 @@ M._errorHandler = error
 ---@field public  getter       table<any, fun(obj: any)>
 ---@field package initCalls?   false|fun(...)[]
 ---@field package compress     string[]
+---@field package presize?     integer
 local Config = {}
 
 ---@param name string | table
@@ -325,7 +343,12 @@ function M.new(name, tbl)
     end
 
     if not tbl then
-        tbl = {}
+        local presize = class.__config.presize
+        if presize then
+            tbl = tablecreate(0, presize + 2)
+        else
+            tbl = tablecreate(0, 2)
+        end
     end
     tbl.__class__ = name
 
@@ -624,6 +647,11 @@ end
 function M.compressKeys(name, keys)
     local config = M.getConfig(name)
     config.compress = keys
+end
+
+function M.presize(name, nreq)
+    local config = M.getConfig(name)
+    config.presize = nreq
 end
 
 return M

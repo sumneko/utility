@@ -610,3 +610,49 @@ test('compress内存比较', function ()
 
     collectgarbage 'restart'
 end)
+
+test('预分配大小1', function ()
+    ---@class TI1
+    local TI1 = class.declare 'TI1'
+
+    function TI1:__init()
+        self.a = 1
+        self.b = 2
+        self.c = 3
+        self.d = 4
+        self.e = 5
+        self.f = 6
+        self.g = 7
+        self.h = 8
+        self.i = 9
+        self.j = 10
+    end
+
+    for _ = 1, 1000000 do
+        class.new 'TI1' ()
+    end
+end)
+
+test('预分配大小2', function ()
+    ---@class TI2
+    local TI2 = class.declare 'TI2'
+
+    class.presize(TI2, 10)
+
+    function TI2:__init()
+        self.a = 1
+        self.b = 2
+        self.c = 3
+        self.d = 4
+        self.e = 5
+        self.f = 6
+        self.g = 7
+        self.h = 8
+        self.i = 9
+        self.j = 10
+    end
+
+    for _ = 1, 1000000 do
+        class.new 'TI2' ()
+    end
+end)

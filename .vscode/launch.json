@@ -7,7 +7,7 @@
         {
             "type": "lua",
             "request": "launch",
-            "name": "Launch",
+            "name": "Lua55",
             "stopOnEntry": false,
             "program": "${workspaceFolder}/test.lua",
             "cpath": "${workspaceFolder}/bin/?.dll",
@@ -17,7 +17,24 @@
             "internalConsoleOptions": "openOnSessionStart",
             "outputCapture": [
                 "print"
-            ]
+            ],
+            "luaVersion": "lua55"
+        },
+        {
+            "type": "lua",
+            "request": "launch",
+            "name": "Lua54",
+            "stopOnEntry": false,
+            "program": "${workspaceFolder}/test.lua",
+            "cpath": "${workspaceFolder}/bin/?.dll",
+            "path": "${workspaceFolder}/?.lua;${workspaceFolder}/?/init.lua",
+            "luaArch": "x86_64",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "openOnSessionStart",
+            "outputCapture": [
+                "print"
+            ],
+            "luaVersion": "lua54"
         },
         {
             "type": "lua",
