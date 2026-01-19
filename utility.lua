@@ -1451,4 +1451,24 @@ function m.mergeLayers(layers)
     return result
 end
 
+---@generic T: function
+---@param f T
+---@param aliveTime number
+---@param getClock? fun(): number
+---@return T
+function m.methodCacher(f, aliveTime, getClock)
+    getClock = getClock or clock
+    local cache = m.weakKTable()
+    return function (self, ...)
+        if not cache[self] then
+            cache[self] = { time = 0, result = nil }
+        end
+        if getClock() > cache[self].time then
+            cache[self].result = f(self, ...)
+            cache[self].time = getClock() + aliveTime
+        end
+        return cache[self].result
+    end
+end
+
 return m
