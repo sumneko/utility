@@ -1,3 +1,5 @@
+---@diagnostic disable: deprecated
+
 local rawset = rawset
 local rawget = rawget
 
