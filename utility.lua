@@ -1451,6 +1451,78 @@ function m.mergeLayers(layers)
     return result
 end
 
+--- fillRanges({{1, 10}, {20, 30}}, 5, 40) -> {{1, 40}}, {{11, 19}, {31, 40}}
+---@param ranges [integer, integer][]
+---@param start integer
+---@param finish integer
+---@return [integer, integer][] # 填充后的范围列表
+---@return [integer, integer][] # 本次实际填充的范围列表
+function m.fillRanges(ranges, start, finish)
+    local merged = {}
+    local filled = {}
+
+    -- 找出与 [start, finish] 重叠的范围，计算合并后的边界
+    local minStart = start
+    local maxFinish = finish
+
+    for i = 1, #ranges do
+        local s, e = ranges[i][1], ranges[i][2]
+        -- 检查是否有重叠
+        if e >= start and s <= finish then
+            minStart = s < minStart and s or minStart
+            maxFinish = e > maxFinish and e or maxFinish
+        end
+    end
+
+    -- 构建合并后的范围列表
+    for i = 1, #ranges do
+        local s, e = ranges[i][1], ranges[i][2]
+        -- 保留那些完全在合并范围之外的范围
+        if e < minStart or s > maxFinish then
+            merged[#merged+1] = ranges[i]
+        end
+    end
+    -- 添加合并后的大范围
+    merged[#merged+1] = { minStart, maxFinish }
+
+    -- 计算实际填充的部分（即 [start, finish] 中原本为空白的区域）
+    local cursor = start
+    for i = 1, #ranges do
+        local s, e = ranges[i][1], ranges[i][2]
+        if e < start then
+            goto continue
+        end
+        if s > finish then
+            break
+        end
+        -- 这个范围与 [start, finish] 有交集
+        if s > cursor then
+            -- 有空白需要填充
+            filled[#filled+1] = { cursor, s - 1 }
+        end
+        -- 更新游标到已有范围的结束位置
+        if e >= cursor then
+            cursor = e + 1
+        end
+        ::continue::
+    end
+
+    -- 检查最后是否还有空白
+    if cursor <= finish then
+        filled[#filled+1] = { cursor, finish }
+    end
+
+    tableSort(merged, function (a, b)
+        return a[1] < b[1]
+    end)
+
+    tableSort(filled, function (a, b)
+        return a[1] < b[1]
+    end)
+
+    return merged, filled
+end
+
 ---@generic T: function
 ---@param f T
 ---@param aliveTime number

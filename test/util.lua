@@ -90,4 +90,25 @@ do
     }))
 end
 
+do
+    local ranges = {{1, 10}, {20, 30}}
+    local merged, filled = util.fillRanges(ranges, 5, 40)
+    assert(util.equal(merged, {{1, 40}}))
+    assert(util.equal(filled, {{11, 19}, {31, 40}}))
+end
+
+do
+    local ranges = {{1, 10}, {20, 30}, {40, 50}}
+    local merged, filled = util.fillRanges(ranges, 2, 3)
+    assert(util.equal(merged, {{1, 10}, {20, 30}, {40, 50}}))
+    assert(util.equal(filled, {}))
+end
+
+do
+    local ranges = {{1, 10}, {20, 30}, {40, 50}}
+    local merged, filled = util.fillRanges(ranges, 25, 55)
+    assert(util.equal(merged, {{1, 10}, {20, 55}}))
+    assert(util.equal(filled, {{31, 39}, {51, 55}}))
+end
+
 print('ok')
