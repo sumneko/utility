@@ -111,4 +111,11 @@ do
     assert(util.equal(filled, {{31, 39}, {51, 55}}))
 end
 
+do
+    local ranges = {{1, 10}, {20, 30}, {40, 50}}
+    local merged, filled = util.fillRanges(ranges, 11, 19)
+    assert(util.equal(merged, {{1, 30}, {40, 50}}))
+    assert(util.equal(filled, {{11, 19}}))
+end
+
 print('ok')

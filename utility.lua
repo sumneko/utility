@@ -1461,14 +1461,14 @@ function m.fillRanges(ranges, start, finish)
     local merged = {}
     local filled = {}
 
-    -- 找出与 [start, finish] 重叠的范围，计算合并后的边界
+    -- 找出与 [start, finish] 重叠或相邻的范围，计算合并后的边界
     local minStart = start
     local maxFinish = finish
 
     for i = 1, #ranges do
         local s, e = ranges[i][1], ranges[i][2]
-        -- 检查是否有重叠
-        if e >= start and s <= finish then
+        -- 检查是否有重叠或相邻（e + 1 == start 或 s - 1 == finish）
+        if e >= start - 1 and s <= finish + 1 then
             minStart = s < minStart and s or minStart
             maxFinish = e > maxFinish and e or maxFinish
         end
@@ -1484,6 +1484,25 @@ function m.fillRanges(ranges, start, finish)
     end
     -- 添加合并后的大范围
     merged[#merged+1] = { minStart, maxFinish }
+
+    -- 排序合并后的范围
+    tableSort(merged, function (a, b)
+        return a[1] < b[1]
+    end)
+
+    -- 合并连续的范围
+    local i = 1
+    while i < #merged do
+        local current = merged[i]
+        local next = merged[i + 1]
+        -- 如果当前范围的结束位置 + 1 >= 下一个范围的开始位置，则合并
+        if current[2] + 1 >= next[1] then
+            current[2] = next[2] > current[2] and next[2] or current[2]
+            tableRemove(merged, i + 1)
+        else
+            i = i + 1
+        end
+    end
 
     -- 计算实际填充的部分（即 [start, finish] 中原本为空白的区域）
     local cursor = start
@@ -1511,10 +1530,6 @@ function m.fillRanges(ranges, start, finish)
     if cursor <= finish then
         filled[#filled+1] = { cursor, finish }
     end
-
-    tableSort(merged, function (a, b)
-        return a[1] < b[1]
-    end)
 
     tableSort(filled, function (a, b)
         return a[1] < b[1]
