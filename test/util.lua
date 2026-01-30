@@ -118,4 +118,140 @@ do
     assert(util.equal(filled, {{11, 19}}))
 end
 
+-- 刁钻测试：空范围列表
+do
+    local ranges = {}
+    local merged, filled = util.fillRanges(ranges, 10, 20)
+    assert(util.equal(merged, {{10, 20}}))
+    assert(util.equal(filled, {{10, 20}}))
+end
+
+-- 刁钻测试：填充范围完全在已有范围之前
+do
+    local ranges = {{20, 30}, {40, 50}}
+    local merged, filled = util.fillRanges(ranges, 1, 10)
+    assert(util.equal(merged, {{1, 10}, {20, 30}, {40, 50}}))
+    assert(util.equal(filled, {{1, 10}}))
+end
+
+-- 刁钻测试：填充范围完全在已有范围之后
+do
+    local ranges = {{1, 10}, {20, 30}}
+    local merged, filled = util.fillRanges(ranges, 40, 50)
+    assert(util.equal(merged, {{1, 10}, {20, 30}, {40, 50}}))
+    assert(util.equal(filled, {{40, 50}}))
+end
+
+-- 刁钻测试：填充范围与已有范围完全重合
+do
+    local ranges = {{1, 10}, {20, 30}}
+    local merged, filled = util.fillRanges(ranges, 5, 8)
+    assert(util.equal(merged, {{1, 10}, {20, 30}}))
+    assert(util.equal(filled, {}))
+end
+
+-- 刁钻测试：填充范围刚好紧邻已有范围（差1）
+do
+    local ranges = {{1, 10}, {30, 40}}
+    local merged, filled = util.fillRanges(ranges, 11, 29)
+    assert(util.equal(merged, {{1, 40}}))
+    assert(util.equal(filled, {{11, 29}}))
+end
+
+-- 刁钻测试：填充单点范围（start == finish）
+do
+    local ranges = {{1, 10}, {20, 30}}
+    local merged, filled = util.fillRanges(ranges, 15, 15)
+    assert(util.equal(merged, {{1, 10}, {15, 15}, {20, 30}}))
+    assert(util.equal(filled, {{15, 15}}))
+end
+
+-- 刁钻测试：填充单点恰好填补空缺
+do
+    local ranges = {{1, 10}, {12, 20}}
+    local merged, filled = util.fillRanges(ranges, 11, 11)
+    assert(util.equal(merged, {{1, 20}}))
+    assert(util.equal(filled, {{11, 11}}))
+end
+
+-- 刁钻测试：填充范围横跨所有已有范围
+do
+    local ranges = {{5, 10}, {20, 25}, {35, 40}}
+    local merged, filled = util.fillRanges(ranges, 1, 50)
+    assert(util.equal(merged, {{1, 50}}))
+    assert(util.equal(filled, {{1, 4}, {11, 19}, {26, 34}, {41, 50}}))
+end
+
+-- 刁钻测试：填充范围恰好连接两个范围（start-1 和 finish+1）
+do
+    local ranges = {{1, 9}, {21, 30}}
+    local merged, filled = util.fillRanges(ranges, 10, 20)
+    assert(util.equal(merged, {{1, 30}}))
+    assert(util.equal(filled, {{10, 20}}))
+end
+
+-- 刁钻测试：已有范围重叠（虽然输入可能不应该这样，但测试鲁棒性）
+do
+    local ranges = {{1, 15}, {10, 20}, {18, 25}}
+    local merged, filled = util.fillRanges(ranges, 30, 35)
+    assert(util.equal(merged, {{1, 25}, {30, 35}}))
+    assert(util.equal(filled, {{30, 35}}))
+end
+
+-- 刁钻测试：填充范围部分覆盖多个已有范围
+do
+    local ranges = {{1, 5}, {10, 15}, {20, 25}, {30, 35}}
+    local merged, filled = util.fillRanges(ranges, 3, 22)
+    assert(util.equal(merged, {{1, 25}, {30, 35}}))
+    assert(util.equal(filled, {{6, 9}, {16, 19}}))
+end
+
+-- 刁钻测试：负数范围
+do
+    local ranges = {{-10, -5}, {5, 10}}
+    local merged, filled = util.fillRanges(ranges, -4, 4)
+    assert(util.equal(merged, {{-10, 10}}))
+    assert(util.equal(filled, {{-4, 4}}))
+end
+
+-- 刁钻测试：填充范围恰好在两个范围的中间但不相邻
+do
+    local ranges = {{1, 10}, {30, 40}}
+    local merged, filled = util.fillRanges(ranges, 15, 20)
+    assert(util.equal(merged, {{1, 10}, {15, 20}, {30, 40}}))
+    assert(util.equal(filled, {{15, 20}}))
+end
+
+-- 刁钻测试：填充范围刚好差2（不会合并）
+do
+    local ranges = {{1, 10}, {30, 40}}
+    local merged, filled = util.fillRanges(ranges, 12, 28)
+    assert(util.equal(merged, {{1, 10}, {12, 28}, {30, 40}}))
+    assert(util.equal(filled, {{12, 28}}))
+end
+
+-- 刁钻测试：大量范围的连续合并
+do
+    local ranges = {{1, 5}, {15, 20}, {30, 35}, {45, 50}, {60, 65}}
+    local merged, filled = util.fillRanges(ranges, 1, 65)
+    assert(util.equal(merged, {{1, 65}}))
+    assert(util.equal(filled, {{6, 14}, {21, 29}, {36, 44}, {51, 59}}))
+end
+
+-- 刁钻测试：填充范围恰好覆盖一个已有范围的起点
+do
+    local ranges = {{10, 20}, {30, 40}}
+    local merged, filled = util.fillRanges(ranges, 10, 15)
+    assert(util.equal(merged, {{10, 20}, {30, 40}}))
+    assert(util.equal(filled, {}))
+end
+
+-- 刁钻测试：填充范围恰好覆盖一个已有范围的终点
+do
+    local ranges = {{10, 20}, {30, 40}}
+    local merged, filled = util.fillRanges(ranges, 15, 20)
+    assert(util.equal(merged, {{10, 20}, {30, 40}}))
+    assert(util.equal(filled, {}))
+end
+
 print('ok')
