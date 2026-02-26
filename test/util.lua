@@ -254,4 +254,19 @@ do
     assert(util.equal(filled, {}))
 end
 
+do
+    local t = {5, 4, 3, 2, 1}
+    local pt = setmetatable({}, {
+        __len = function ()
+            return #t
+        end,
+        __index = t,
+        __newindex = t,
+    })
+
+    table.sort(pt)
+
+    assert(util.equal(t, { 1, 2, 3, 4, 5 }))
+end
+
 print('ok')
