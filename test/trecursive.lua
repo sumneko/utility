@@ -1,28 +1,27 @@
 local rec = require 'recursive'
 
-local t
-local function f(i)
+local function f(i, t)
     if i <= 0 then
         return 0
     else
-        local n = f(i-1)
-        t[#t+1] = n
+        local n = f(i-1, t)
+        t.n = n
         return n + 1
     end
 end
 
-t = {}
+local t = {}
 local clock = os.clock()
-for _ = 1, 100 do
-    f(1000)
+for _ = 1, 1000 do
+    f(1000, t)
 end
 print(os.clock() - clock)
-assert(#t == 100000)
+assert(t.n == 999)
 
-f = rec.resolve(f, 1000000)
+f = rec.resolve(f, 10000000)
 
-t = {}
+local t = {}
 local clock = os.clock()
-f(100000)
-print(os.clock() - clock)
-assert(#t == 100000)
+f(1000000, t)
+print('递归1000000次耗时：', os.clock() - clock)
+assert(t.n == 999999)
