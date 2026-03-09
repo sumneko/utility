@@ -13,8 +13,19 @@ local M = {}
 local Number  = 'N'
 local UInt8   = 'I'
 local UInt16  = 'J'
+local UInt24  = 'O'
 local UInt32  = 'K'
 local Int64   = 'L'
+local I0      = '0'
+local I1      = '1'
+local I2      = '2'
+local I3      = '3'
+local I4      = '4'
+local I5      = '5'
+local I6      = '6'
+local I7      = '7'
+local I8      = '8'
+local I9      = '9'
 local Char1   = 'V'
 local Char2   = 'W'
 local Str8    = 'X'
@@ -23,8 +34,8 @@ local Str32   = 'Z'
 local True    = 'T'
 local False   = 'F'
 local Nil     = '!'
-local ArrayB  = '[' -- 开始一张数组的定义（废弃，仅用于兼容）
-local ArrayE  = ']' -- 结束一张数组的定义（废弃，仅用于兼容）
+local ArrayB  = '[' -- 开始一张数组的定义
+local ArrayE  = ']' -- 结束一张数组的定义
 local TableB  = 'B' -- 开始一张表的定义（废弃，仅用于兼容）
 local TableE  = 'E' -- 结束一张表的定义（废弃，仅用于兼容）
 local MixB    = '{' -- 开始一张混合表的定义
@@ -47,15 +58,45 @@ local ArraySymbol = { '<Array>' }
 
 local encode
 
+---@param t table
+local function getArrayLikeLength(t)
+    local len = 0
+    local count = 0
+    for k in next, t do
+        if mathType(k) ~= 'integer' then
+            return nil
+        end
+        if k <= 0 then
+            return nil
+        end
+        count = count + 1
+        if k > len then
+            len = k
+        end
+    end
+    -- 允许一定程度上的稀疏，毕竟稀疏的部分只占一个字节
+    if count * 4 >= len then
+        return len
+    end
+    return nil
+end
+
 local encodeMethods;encodeMethods = {
     ['number'] = function (value, buf)
         if mathType(value) == 'integer' then
             if value >= 0 then
+                if value < 10 then
+                    buf[#buf+1] = tostring(value)
+                    return
+                end
                 if value < (1 << 8) then
                     buf[#buf+1] = UInt8 .. stringPack('I1', value)
                     return
                 elseif value < (1 << 16) then
                     buf[#buf+1] = UInt16 .. stringPack('I2', value)
+                    return
+                elseif value < (1 << 24) then
+                    buf[#buf+1] = UInt24 .. stringPack('I3', value)
                     return
                 elseif value < (1 << 32) then
                     buf[#buf+1] = UInt32 .. stringPack('I4', value)
@@ -125,23 +166,35 @@ local encodeMethods;encodeMethods = {
 
         ex.refid = ex.refid + 1
         ex.refMap[value] = ex.refid
-        buf[#buf+1] = MixB
 
-        local i = 1
-        for k, v in next, value do
-            if k == i then
-                -- 数组部分
-                i = i + 1
-                buf[#buf+1] = Array
-                encode(v, buf, ex)
-            else
-                -- 混合表部分
-                encode(k, buf, ex)
-                encode(v, buf, ex)
+        local len = getArrayLikeLength(value)
+        if len then
+            buf[#buf+1] = ArrayB
+
+            for i = 1, len do
+                encode(value[i], buf, ex)
             end
-        end
 
-        buf[#buf+1] = MixE
+            buf[#buf+1] = ArrayE
+        else
+            buf[#buf+1] = MixB
+
+            local i = 1
+            for k, v in next, value do
+                if k == i then
+                    -- 数组部分
+                    i = i + 1
+                    buf[#buf+1] = Array
+                    encode(v, buf, ex)
+                else
+                    -- 混合表部分
+                    encode(k, buf, ex)
+                    encode(v, buf, ex)
+                end
+            end
+
+            buf[#buf+1] = MixE
+        end
     end,
 }
 
@@ -191,6 +244,11 @@ local decodeMethods;decodeMethods = {
         ex.index = newIndex
         return value
     end,
+    [UInt24] = function (ex)
+        local value, newIndex = stringUnpack('I3', ex.str, ex.index)
+        ex.index = newIndex
+        return value
+    end,
     [UInt32] = function (ex)
         local value, newIndex = stringUnpack('I4', ex.str, ex.index)
         ex.index = newIndex
@@ -200,6 +258,36 @@ local decodeMethods;decodeMethods = {
         local value, newIndex = stringUnpack('j', ex.str, ex.index)
         ex.index = newIndex
         return value
+    end,
+    [I0] = function ()
+        return 0
+    end,
+    [I1] = function ()
+        return 1
+    end,
+    [I2] = function ()
+        return 2
+    end,
+    [I3] = function ()
+        return 3
+    end,
+    [I4] = function ()
+        return 4
+    end,
+    [I5] = function ()
+        return 5
+    end,
+    [I6] = function ()
+        return 6
+    end,
+    [I7] = function ()
+        return 7
+    end,
+    [I8] = function ()
+        return 8
+    end,
+    [I9] = function ()
+        return 9
     end,
     [Char1] = function (ex)
         local value = stringSub(ex.str, ex.index, ex.index)
@@ -279,7 +367,7 @@ local decodeMethods;decodeMethods = {
         ex.refMap[ex.ref] = value
         local i = 0
         while true do
-            local v = decode()
+            local v = decode(ex)
             if v == EndSymbol then
                 break
             end
