@@ -6,6 +6,7 @@ local stringPack   = string.pack
 local stringUnpack = string.unpack
 local stringSub    = string.sub
 local tableConcat  = table.concat
+local tableSort    = table.sort
 
 ---@class Serialization
 local M = {}
@@ -40,6 +41,9 @@ local TableB  = 'B' -- 开始一张表的定义（废弃，仅用于兼容）
 local TableE  = 'E' -- 结束一张表的定义（废弃，仅用于兼容）
 local MixB    = '{' -- 开始一张混合表的定义
 local MixE    = '}' -- 结束一张混合表的定义
+local STableB = '<' -- 开始一张简易表的定义，格式为 [ k1, k2, ..., v1, v2, ... ]，其中key的部分会尝试复用
+local STableE = '>'
+local RTableB = '|' -- 开始复用一张简易表，后面跟的数字表示复用的表ID。复用时长度已知，因此不用结束符。
 local Array   = '.' -- 此字段为整数部分
 local Ref     = 'R' -- 复用之前定义的字符串或表
 local Custom  = 'C' -- 自定义数据
@@ -59,26 +63,36 @@ local ArraySymbol = { '<Array>' }
 local encode
 
 ---@param t table
-local function getArrayLikeLength(t)
-    local len = 0
-    local count = 0
+---@return any[] keys
+---@return boolean allSimpleKey
+---@return integer? arrayLen
+local function peekTable(t)
+    ---@type integer?
+    local maxInteger = 0
+    local arrayLen
+    local keys = {}
+    local allSimpleKey = true
     for k in next, t do
-        if mathType(k) ~= 'integer' then
-            return nil
-        end
-        if k <= 0 then
-            return nil
-        end
-        count = count + 1
-        if k > len then
-            len = k
+        keys[#keys+1] = k
+        local tp = type(k)
+        if tp == 'number' then
+            if  maxInteger
+            and k > maxInteger
+            and mathType(k) == 'integer' then
+                maxInteger = k
+            end
+        elseif tp == 'string' then
+            maxInteger = nil
+        else
+            maxInteger = nil
+            allSimpleKey = false
         end
     end
     -- 允许一定程度上的稀疏，毕竟稀疏的部分只占一个字节
-    if count * 4 >= len then
-        return len
+    if maxInteger and #keys * 4 >= maxInteger then
+        arrayLen = maxInteger
     end
-    return nil
+    return keys, allSimpleKey, arrayLen
 end
 
 local encodeMethods;encodeMethods = {
@@ -167,20 +181,67 @@ local encodeMethods;encodeMethods = {
         ex.refid = ex.refid + 1
         ex.refMap[value] = ex.refid
 
-        local len = getArrayLikeLength(value)
-        if len then
+        local myRef = ex.refid
+
+        local keys, allSimpleKey, arrayLen = peekTable(value)
+        if arrayLen then
             buf[#buf+1] = ArrayB
 
-            for i = 1, len do
+            for i = 1, arrayLen do
                 encode(value[i], buf, ex)
             end
 
             buf[#buf+1] = ArrayE
+        elseif allSimpleKey then
+            tableSort(keys, function (a, b)
+                local ta, tb = type(a), type(b)
+                if ta == tb then
+                    return a < b
+                end
+                return ta == 'number'
+            end)
+
+            local keyBuf = {}
+            local i = 1
+            for n = 1, #keys do
+                local k = keys[n]
+
+                if k == i then
+                    -- 数组部分
+                    i = i + 1
+                    keyBuf[#keyBuf+1] = Array
+                else
+                    -- 混合表部分
+                    encode(k, keyBuf, ex)
+                end
+            end
+            local keyContent = tableConcat(keyBuf)
+            local refid = ex.simpleMap[keyContent]
+            if refid then
+                buf[#buf+1] = RTableB
+                encode(refid, buf, ex)
+            else
+                buf[#buf+1] = STableB
+                ex.simpleMap[keyContent] = myRef
+                buf[#buf+1] = keyContent
+            end
+
+            for n = 1, #keys do
+                local k = keys[n]
+                local v = value[k]
+                encode(v, buf, ex)
+            end
+
+            if not refid then
+                buf[#buf+1] = STableE
+            end
         else
             buf[#buf+1] = MixB
 
             local i = 1
-            for k, v in next, value do
+            for n = 1, #keys do
+                local k = keys[n]
+                local v = value[k]
                 if k == i then
                     -- 数组部分
                     i = i + 1
@@ -213,12 +274,11 @@ function M.encode(data, hook, ignoreUnknownType)
         return ''
     end
     local buf = {}
-    local refid = 0
-    local refMap = {}
 
     encode(data, buf, {
-        refid = refid,
-        refMap = refMap,
+        refid = 0,
+        refMap = {},
+        simpleMap = {},
         hook = hook,
         ignoreUnknownType = ignoreUnknownType,
     })
@@ -348,11 +408,11 @@ local decodeMethods;decodeMethods = {
         ex.ref = ex.ref + 1
         ex.refMap[ex.ref] = value
         while true do
-            local k = decode()
+            local k = decode(ex)
             if k == EndSymbol then
                 break
             end
-            local v = decode()
+            local v = decode(ex)
             ---@diagnostic disable-next-line: need-check-nil
             value[k] = v
         end
@@ -409,6 +469,59 @@ local decodeMethods;decodeMethods = {
         end
         return value
     end,
+    [STableB] = function (ex)
+        local value = {}
+        ex.ref = ex.ref + 1
+        ex.refMap[ex.ref] = value
+
+        local myRef = ex.ref
+
+        local i = 1
+        local list = {}
+        while true do
+            local v = decode(ex)
+            if v == EndSymbol then
+                break
+            end
+            if v == ArraySymbol then
+                list[#list+1] = i
+                i = i + 1
+            else
+                list[#list+1] = v
+            end
+        end
+
+        ex.simpleMap[myRef] = list
+
+        local count = #list // 2
+        for n = 1, count do
+            local k = list[n]
+            local v = list[n + count]
+            value[k] = v
+        end
+
+        return value
+    end,
+    [RTableB] = function (ex)
+        local value = {}
+        ex.ref = ex.ref + 1
+        ex.refMap[ex.ref] = value
+
+        local refid = decode(ex)
+        local list = ex.simpleMap[refid]
+
+        local count = #list // 2
+        for n = 1, count do
+            local k = list[n]
+            local v = decode(ex)
+            value[k] = v
+        end
+
+        return value
+    end,
+    [STableE] = function ()
+        return EndSymbol
+    end,
     [Ref] = function (ex)
         local value = decode(ex)
         value = ex.refMap[value]
@@ -424,6 +537,7 @@ local decodeMethods;decodeMethods = {
     end,
 }
 
+---@param ex table
 function decode(ex)
     local tp = stringSub(ex.str, ex.index, ex.index)
     ex.index = ex.index + 1
@@ -444,6 +558,7 @@ function M.decode(str, hook)
         index = 1,
         ref = 0,
         refMap = {},
+        simpleMap = {},
         hook = hook,
     }
 

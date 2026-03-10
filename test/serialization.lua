@@ -75,6 +75,18 @@ do
     test(t)
 end
 
+do
+    test {
+        [1] = 1,
+        [2] = 2,
+        [4] = 4,
+        [5] = 5,
+        x = 1,
+        y = 2,
+        z = 3,
+    }
+end
+
 local t = {}
 for i = 1, 10000 do
     t[i] = i * 10
