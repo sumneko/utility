@@ -80,7 +80,7 @@ local function peekTable(t)
             if  maxInteger
             and k > maxInteger
             and mathType(k) == 'integer' then
-                maxInteger = k
+                maxInteger = k --[[@as integer]]
             end
         elseif tp == 'string' then
             maxInteger = nil
