@@ -41,17 +41,18 @@ local TableB  = 'B' -- 开始一张表的定义（废弃，仅用于兼容）
 local TableE  = 'E' -- 结束一张表的定义（废弃，仅用于兼容）
 local MixB    = '{' -- 开始一张混合表的定义
 local MixE    = '}' -- 结束一张混合表的定义
-local STableB = '<' -- 开始一张简易表的定义，格式为 [ k1, k2, ..., v1, v2, ... ]，其中key的部分会尝试复用
-local STableE = '>'
-local RTableB = '|' -- 开始复用一张简易表，后面跟的数字表示复用的表ID。复用时长度已知，因此不用结束符。
+local STableB = '<' -- 开始一张简易表的定义，格式为 [ k1, k2, ..., |,  v1, v2, ... ]，其中key的部分会尝试复用
+local Sep     = '|' -- 简易表的键值分隔符
+local RTableB = '>' -- 开始复用一张简易表，后面跟的数字表示复用的表ID。复用时长度已知，因此不用结束符。
 local Array   = '.' -- 此字段为整数部分
 local Ref     = 'R' -- 复用之前定义的字符串或表
 local Custom  = 'C' -- 自定义数据
 
 local RefStrLen = 4 -- 字符串长度大于此值时保存引用
 
-local EndSymbol   = { '<End>' }
-local ArraySymbol = { '<Array>' }
+local EndSymbol   = { '<END>' }
+local ArraySymbol = { '<ARRAY>' }
+local SepSymbol   = { '<SEP>' }
 
 ---@alias Serialization.SupportTypes
 ---| number
@@ -224,16 +225,13 @@ local encodeMethods;encodeMethods = {
                 buf[#buf+1] = STableB
                 ex.simpleMap[keyContent] = myRef
                 buf[#buf+1] = keyContent
+                buf[#buf+1] = Sep
             end
 
             for n = 1, #keys do
                 local k = keys[n]
                 local v = value[k]
                 encode(v, buf, ex)
-            end
-
-            if not refid then
-                buf[#buf+1] = STableE
             end
         else
             buf[#buf+1] = MixB
@@ -477,26 +475,25 @@ local decodeMethods;decodeMethods = {
         local myRef = ex.ref
 
         local i = 1
-        local list = {}
+        local keys = {}
         while true do
             local v = decode(ex)
-            if v == EndSymbol then
+            if v == SepSymbol then
                 break
             end
             if v == ArraySymbol then
-                list[#list+1] = i
+                keys[#keys+1] = i
                 i = i + 1
             else
-                list[#list+1] = v
+                keys[#keys+1] = v
             end
         end
 
-        ex.simpleMap[myRef] = list
+        ex.simpleMap[myRef] = keys
 
-        local count = #list // 2
-        for n = 1, count do
-            local k = list[n]
-            local v = list[n + count]
+        for n = 1, #keys do
+            local k = keys[n]
+            local v = decode(ex)
             value[k] = v
         end
 
@@ -508,24 +505,23 @@ local decodeMethods;decodeMethods = {
         ex.refMap[ex.ref] = value
 
         local refid = decode(ex)
-        local list = ex.simpleMap[refid]
+        local keys = ex.simpleMap[refid]
 
-        local count = #list // 2
-        for n = 1, count do
-            local k = list[n]
+        for n = 1, #keys do
+            local k = keys[n]
             local v = decode(ex)
             value[k] = v
         end
 
         return value
     end,
-    [STableE] = function ()
-        return EndSymbol
-    end,
     [Ref] = function (ex)
         local value = decode(ex)
         value = ex.refMap[value]
         return value
+    end,
+    [Sep] = function ()
+        return SepSymbol
     end,
     [Custom] = function (ex)
         local value = decode(ex)

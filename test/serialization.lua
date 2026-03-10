@@ -87,6 +87,16 @@ do
     }
 end
 
+do
+    test {
+        x = {
+            x = {
+                x = 1
+            }
+        }
+    }
+end
+
 local t = {}
 for i = 1, 10000 do
     t[i] = i * 10
