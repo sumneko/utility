@@ -265,6 +265,35 @@ do
 end
 
 do
+    local result = {}
+    local DEL_A = class.declare 'DEL_A'
+
+    function DEL_A:__del()
+        result[#result+1] = 'A'
+    end
+
+    local DEL_B = class.declare('DEL_B', 'DEL_A')
+
+    function DEL_B:__del()
+        result[#result+1] = 'B'
+    end
+
+    local DEL_C = class.declare('DEL_C', 'DEL_B')
+
+    function DEL_C:__del()
+        result[#result+1] = 'C'
+    end
+
+    local del = class.new 'DEL_C' ()
+
+    class.delete(del)
+
+    assert(result[1] == 'A')
+    assert(result[2] == 'B')
+    assert(result[3] == 'C')
+end
+
+do
     --测试对重载的支持
     ---@class EA
     local EA = class.declare 'EA'
