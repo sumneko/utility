@@ -546,6 +546,7 @@ function Config:getAllExtendsRecursive()
                 M._errorHandler(('class %q not found'):format(ext))
             end
             push(cfg)
+            result[#result+1] = cfg
             ::continue::
         end
     end
