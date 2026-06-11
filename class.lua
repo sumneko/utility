@@ -50,14 +50,16 @@ M._errorHandler = error
 ---@field package __config Class.Config
 
 ---@class Class.Config
----@field private name         string
+---@field package name         string
 ---@field package extendsMap   table<string, boolean>
----@field package extendsCalls Class.Extends.CallData[]
----@field package extendsKeys  table<string, boolean>
+---@field package extendsList  Class.ExtendsInfo[]
 ---@field private superCache   table<string, fun(...)>
 ---@field package superClass?  Class.Base
----@field public  getter       table<any, fun(obj: any)>
----@field package initCalls?   false|fun(...)[]
+---@field public  getter       table<any, fun(obj: Class.Base)>
+---@field package inited?      boolean
+---@field package allExtends?  Class.Config[]
+---@field package extendsKeys? table<string, boolean>
+---@field package initCalls?   fun(obj: Class.Base, ...)[]
 ---@field package compress     string[]
 ---@field package presize?     integer
 local Config = {}
@@ -72,9 +74,8 @@ function M.getConfig(name)
         M._classConfig[name] = setmetatable({
             name         = name,
             extendsMap   = {},
+            extendsList  = {},
             superCache   = {},
-            extendsCalls = {},
-            extendsKeys  = {},
             compress     = {},
         }, { __index = Config })
     end
@@ -92,6 +93,7 @@ end
 function M.declare(name, super, superInit)
     local config = M.getConfig(name)
     if M._classes[name] then
+        config:reset()
         return M._classes[name], config
     end
     local class  = {}
@@ -275,7 +277,7 @@ function M.declare(name, super, superInit)
     end
 
     function class:__call(...)
-        M.runInit(self, name, ...)
+        config:runInit(self, ...)
         return self
     end
 
@@ -296,15 +298,12 @@ function M.declare(name, super, superInit)
     if superClass then
         if class == superClass then
             M._errorHandler(('class %q can not inherit itself'):format(name))
+        else
+            class.__super = superClass
+            config.superClass = superClass
+            config:extends(super, superInit)
         end
 
-        class.__super = superClass
-        config.superClass = superClass
-        if superInit then
-            config:extends(super, superInit)
-        else
-            config:extends(super, function () end)
-        end
     end
 
     return class, config
@@ -342,10 +341,16 @@ function M.new(name, tbl)
             end
         end
         M._errorHandler(('class %q not found'):format(name))
+        return nil
+    end
+
+    local config = class.__config
+    if not config.inited then
+        config:init()
     end
 
     if not tbl then
-        local presize = class.__config.presize
+        local presize = config.presize
         if presize then
             tbl = tablecreate(0, presize + 2)
         else
@@ -369,9 +374,11 @@ function M.delete(obj)
     local name = obj.__class__
     if not name then
         M._errorHandler('can not delete undeclared class : ' .. tostring(obj))
+        return
     end
 
-    M.runDel(obj, name)
+    local config = M.getConfig(name)
+    config:runDel(obj)
 end
 
 -- 获取类的名称
@@ -402,7 +409,9 @@ function M.super(name)
     return config:super(name)
 end
 
----@alias Class.Extends.CallData { name: string, init?: fun(self: any, super: (fun(...): Class.Base), ...) }
+---@class Class.ExtendsInfo
+---@field name string
+---@field init? fun(self: any, super: (fun(...): Class.Base), ...)
 
 ---@generic Class: string
 ---@generic Extends: string
@@ -414,83 +423,39 @@ function M.extends(name, extendsName, init)
     config:extends(extendsName, init)
 end
 
----@private
----@param obj table
----@param name string
----@param ... any
-function M.runInit(obj, name, ...)
-    local data  = M.getConfig(name)
-    if data.initCalls == false then
-        return
-    end
-    if not data.initCalls then
-        local initCalls = {}
-        local collected = {}
+local function createQueue()
+    local queue = {}
+    local first, last
 
-        local function collectInitCalls(cname)
-            if collected[cname] then
-                error(('class %q has circular inheritance'):format(cname))
-            end
-            collected[cname] = true
-            local class = M._classes[cname]
-            local cdata  = M.getConfig(cname)
-            local extendsCalls = cdata.extendsCalls
-            if extendsCalls then
-                for _, call in ipairs(extendsCalls) do
-                    if call.init then
-                        initCalls[#initCalls+1] = function (cobj, ...)
-                            local firstCall = true
-                            call.init(cobj, function (...)
-                                if firstCall then
-                                    firstCall = false
-                                    M.runInit(cobj, call.name, ...)
-                                end
-                                return M._classes[call.name]
-                            end, ...)
-                        end
-                    else
-                        collectInitCalls(call.name)
-                    end
-                end
-            end
-            if class.__init then
-                initCalls[#initCalls+1] = class.__init
-            end
-        end
-
-        collectInitCalls(name)
-
-        if #initCalls == 0 then
-            data.initCalls = false
+    local function push(obj)
+        if not last then
+            first, last = obj, obj
             return
+        end
+        if first == obj or last == obj or queue[obj] ~= nil then
+            return
+        end
+        local tailObj = last
+        queue[tailObj] = obj
+        last = obj
+    end
+
+    local function pop()
+        if not first then
+            return nil
+        end
+        local obj = first
+        local nextObj = queue[obj]
+        queue[obj] = nil
+        if obj == last then
+            first, last = nil, nil
         else
-            data.initCalls = initCalls
+            first = nextObj
         end
+        return obj
     end
 
-    for i = 1, #data.initCalls do
-        data.initCalls[i](obj, ...)
-    end
-end
-
----@private
----@param obj table
----@param name string
-function M.runDel(obj, name)
-    local class = M._classes[name]
-    if not class then
-        return
-    end
-    local data  = M.getConfig(name)
-    local extendsCalls = data.extendsCalls
-    if extendsCalls then
-        for _, call in ipairs(extendsCalls) do
-            M.runDel(obj, call.name)
-        end
-    end
-    if class.__del then
-        class.__del(obj)
-    end
+    return push, pop
 end
 
 ---@param errorHandler fun(msg: string)
@@ -524,76 +489,194 @@ end
 
 ---@generic Extends: string
 ---@param extendsName `Extends`
----@param init? fun(self: self, super: Extends)
+---@param init? fun(self: self, super: Extends, ...)
 function Config:extends(extendsName, init)
-    local class   = M._classes[self.name]
-    local extends = M._classes[extendsName]
-    if not extends then
-        M._errorHandler(('class %q not found'):format(extendsName))
-    end
     if type(init) ~= 'nil' and type(init) ~= 'function' then
         M._errorHandler(('init must be nil or function'))
     end
+    if self.extendsMap[extendsName] then
+        return
+    end
     self.extendsMap[extendsName] = true
 
-    do --复制父类的字段与 getter 和 setter
-        for k, v in pairs(extends) do
-            if (not class[k] or self.extendsKeys[k])
-            and not k:match '^__' then
-                self.extendsKeys[k] = true
-                class[k] = v
-            end
+    self.extendsList[#self.extendsList+1] = {
+        name = extendsName,
+        init = init,
+    }
+end
+
+---返回一个类的所有继承的类，浅的排前面，深的排后面
+---@private
+function Config:getAllExtendsRecursive()
+    ---@type Class.Config[]
+    local result = {}
+
+    -- 按广度优先搜索
+    local visited = {}
+    local push, pop = createQueue()
+    push(self)
+    visited[self.name] = true
+
+    while true do
+        ---@type Class.Config?
+        local current = pop()
+        if not current then
+            break
         end
-        for k, v in pairs(extends.__getter) do
-            if not class.__getter[k]
-            or self.extendsKeys[k] then
-                self.extendsKeys[k] = true
-                class.__getter[k] = v
+
+        for _, info in ipairs(current.extendsList) do
+            local ext = info.name
+            if ext == self.name then
+                M._errorHandler(('class %q has circular inheritance'):format(self.name))
             end
-        end
-        for k, v in pairs(extends.__setter) do
-            if not class.__setter[k]
-            or self.extendsKeys[k] then
-                self.extendsKeys[k] = true
-                class.__setter[k] = v
+            if visited[ext] then
+                goto continue
             end
-        end
-        local config = M.getConfig(extendsName)
-        for _, k in ipairs(config.compress) do
-            self.compress[#self.compress+1] = k
+            visited[ext] = true
+            local cfg = M.getConfig(ext)
+            if not cfg then
+                M._errorHandler(('class %q not found'):format(ext))
+            end
+            push(cfg)
+            ::continue::
         end
     end
 
-    do --记录父类的init方法
-        local rewrite
-        for i = 1, #self.extendsCalls do
-            local call = self.extendsCalls[i]
-            if call.name == extendsName then
-                call.init = init
-                rewrite = true
-                break
+    return result
+end
+
+---@package
+function Config:init()
+    if self.inited then
+        return
+    end
+    self.inited = true
+    self.allExtends = self:getAllExtendsRecursive()
+    self.extendsKeys = {}
+
+    local class = M._classes[self.name]
+    for _, info in ipairs(self.extendsList) do
+        local extendsName = info.name
+        local extends = M._classes[extendsName]
+        if not extends then
+            M._errorHandler(('class %q not found'):format(extendsName))
+        end
+        local extendsConfig = extends.__config
+        extendsConfig:init()
+
+        do --复制父类的字段与 getter 和 setter
+            for k, v in pairs(extends) do
+                if (not class[k] or self.extendsKeys[k])
+                and not k:match '^__' then
+                    self.extendsKeys[k] = true
+                    class[k] = v
+                end
+            end
+            for k, v in pairs(extends.__getter) do
+                if not class.__getter[k]
+                or self.extendsKeys[k] then
+                    self.extendsKeys[k] = true
+                    class.__getter[k] = v
+                end
+            end
+            for k, v in pairs(extends.__setter) do
+                if not class.__setter[k]
+                or self.extendsKeys[k] then
+                    self.extendsKeys[k] = true
+                    class.__setter[k] = v
+                end
+            end
+            local config = M.getConfig(extendsName)
+            for _, k in ipairs(config.compress) do
+                self.compress[#self.compress+1] = k
             end
         end
-        if not rewrite then
-            table.insert(self.extendsCalls, {
-                init = init,
-                name = extendsName,
-            })
+    end
+end
+
+---@private
+function Config:getInitCalls()
+    local initCalls = self.initCalls
+    if not initCalls then
+        initCalls = {}
+        self.initCalls = initCalls
+
+        for _, extends in ipairs(self.extendsList) do
+            local class = M._classes[extends.name]
+            if not class then
+                M._errorHandler(('class %q not found'):format(extends.name))
+                goto continue
+            end
+            if extends.init then
+                -- 用户主动传的init要做一次校验：
+                -- 有且仅有一次调用super
+                initCalls[#initCalls+1] = function (obj, ...)
+                    local superCount = 0
+                    local function super(...)
+                        superCount = superCount + 1
+                        if superCount > 1 then
+                            M._errorHandler(('super can only be called once in extends of class %q'):format(self.name))
+                            return
+                        end
+                        class.__config:runInit(obj, ...)
+                    end
+                    extends.init(obj, super, ...)
+                    if superCount == 0 then
+                        M._errorHandler(('super must be called in extends of class %q'):format(self.name))
+                    end
+                end
+            else
+                -- 没有显性传入init的，默认调用父类的init
+                initCalls[#initCalls+1] = function (obj, ...)
+                    class.__config:runInit(obj, ...)
+                end
+            end
+            ::continue::
         end
     end
 
-    -- 检查是否需要显性初始化
-    if not init then
-        if not extends.__init then
-            return
-        end
-        local classParams = class.__init and debug.getinfo(class.__init, 'u').nparams or 1
-        local extendsParams = debug.getinfo(extends.__init, 'u').nparams
-        if extendsParams <= classParams then
-            return
-        end
-        M._errorHandler(('must call super for extends "%s"'):format(extendsName))
+    return initCalls
+end
+
+---@package
+---@param obj table
+---@param ... any
+function Config:runInit(obj, ...)
+    local initCalls = self:getInitCalls()
+    for i = 1, #initCalls do
+        initCalls[i](obj, ...)
     end
+
+    local class = M._classes[self.name]
+    if class.__init then
+        class.__init(obj, ...)
+    end
+end
+
+---@package
+---@param obj table
+function Config:runDel(obj)
+    for i = #self.allExtends, 1, -1 do
+        local extends = self.allExtends[i]
+        local class = M._classes[extends.name]
+        if class.__del then
+            class.__del(obj)
+        end
+    end
+
+    local class = M._classes[self.name]
+    if class.__del then
+        class.__del(obj)
+    end
+end
+
+---重置缓存，用于支持重载
+---@package
+function Config:reset()
+    self.inited = nil
+    self.allExtends = nil
+    self.extendsKeys = nil
+    self.initCalls = nil
 end
 
 local isInstanceMap = setmetatable({}, { __index = function (isInstanceMap, myName)
