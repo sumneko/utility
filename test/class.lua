@@ -284,9 +284,10 @@ do
 
     EA.x = 2
 
+    assert(eb1.x == 2)
+
     local eb2 = class.new 'EB' ()
 
-    assert(eb1.x == 2)
     assert(eb2.x == 2)
 end
 

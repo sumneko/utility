@@ -53,6 +53,7 @@ M._errorHandler = error
 ---@field package name         string
 ---@field package extendsMap   table<string, boolean>
 ---@field package extendsList  Class.ExtendsInfo[]
+---@field package extendsRev   table<string, boolean>
 ---@field private superCache   table<string, fun(...)>
 ---@field package superClass?  Class.Base
 ---@field public  getter       table<any, fun(obj: Class.Base)>
@@ -62,6 +63,7 @@ M._errorHandler = error
 ---@field package initCalls?   fun(obj: Class.Base, ...)[]
 ---@field package compress     string[]
 ---@field package presize?     integer
+---@field package resetTrap    fun()
 local Config = {}
 
 ---@param name string | table
@@ -75,6 +77,7 @@ function M.getConfig(name)
             name         = name,
             extendsMap   = {},
             extendsList  = {},
+            extendsRev   = {},
             superCache   = {},
             compress     = {},
         }, { __index = Config })
@@ -213,21 +216,25 @@ function M.declare(name, super, superInit)
         end
     end
 
-    function class:__index(k)
-        if next(class.__getter) or #config.compress > 0 then
-            if #config.compress > 0 then
-                buildKeyMap()
-                class.__index = getterFuncWithCompress
-                return getterFuncWithCompress(self, k)
+    config.resetTrap = function ()
+        function class:__index(k)
+            config:init()
+            if next(class.__getter) or #config.compress > 0 then
+                if #config.compress > 0 then
+                    buildKeyMap()
+                    class.__index = getterFuncWithCompress
+                    return getterFuncWithCompress(self, k)
+                else
+                    class.__index = getterFunc
+                    return getterFunc(self, k)
+                end
             else
-                class.__index = getterFunc
-                return getterFunc(self, k)
+                class.__index = class
+                return class[k]
             end
-        else
-            class.__index = class
-            return class[k]
         end
     end
+    config.resetTrap()
 
     function class:__newindex(k, v)
         if next(class.__setter) or #config.compress > 0 then
@@ -498,6 +505,7 @@ function Config:extends(extendsName, init)
         return
     end
     self.extendsMap[extendsName] = true
+    M.getConfig(extendsName).extendsRev[self.name] = true
 
     self.extendsList[#self.extendsList+1] = {
         name = extendsName,
@@ -552,7 +560,7 @@ function Config:init()
     end
     self.inited = true
     self.allExtends = self:getAllExtendsRecursive()
-    self.extendsKeys = {}
+    self.extendsKeys = self.extendsKeys or {}
 
     local class = M._classes[self.name]
     for _, info in ipairs(self.extendsList) do
@@ -564,6 +572,13 @@ function Config:init()
         local extendsConfig = extends.__config
         extendsConfig:init()
 
+        do --清除之前复制过来的字段（用于重载父类）
+            for k in pairs(self.extendsKeys) do
+                class[k] = nil
+                class.__getter[k] = nil
+                class.__setter[k] = nil
+            end
+        end
         do --复制父类的字段与 getter 和 setter
             for k, v in pairs(extends) do
                 if (not class[k] or self.extendsKeys[k])
@@ -672,11 +687,24 @@ end
 
 ---重置缓存，用于支持重载
 ---@package
-function Config:reset()
-    self.inited = nil
+---@param visited? table
+function Config:reset(visited)
     self.allExtends = nil
-    self.extendsKeys = nil
     self.initCalls = nil
+
+    if not self.inited then
+        return
+    end
+    self.inited = nil
+    self:resetTrap()
+
+    visited = visited or {}
+    visited[self.name] = true
+    for child in pairs(self.extendsRev) do
+        if not visited[child] then
+            M.getConfig(child):reset(visited)
+        end
+    end
 end
 
 local isInstanceMap = setmetatable({}, { __index = function (isInstanceMap, myName)
