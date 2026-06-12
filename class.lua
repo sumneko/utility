@@ -57,12 +57,13 @@ M._errorHandler = error
 ---@field private superCache   table<string, fun(...)>
 ---@field package superClass?  Class.Base
 ---@field package inited?      boolean
----@field package allExtends?  Class.Config[]
 ---@field package extendsKeys? table<string, boolean>
 ---@field package initCalls?   fun(obj: Class.Base, ...)[]
 ---@field package compress     string[]
 ---@field package presize?     integer
 ---@field package resetTrap    fun()
+---@field private initOrder?  Class.Config[]
+---@field private mergedCompress? string[]
 local Config = {}
 
 ---@param name string | table
@@ -114,7 +115,7 @@ function M.declare(name, super, superInit)
         end
         keyMap = {}
         keyMapRev = {}
-        for i, k in ipairs(config.compress) do
+        for i, k in ipairs(config:getCompress()) do
             keyMap[k] = i
             keyMapRev[i] = k
         end
@@ -213,10 +214,14 @@ function M.declare(name, super, superInit)
     end
 
     config.resetTrap = function ()
+        keyMap = nil
+        keyMapRev = nil
+
         function class:__index(k)
             config:init()
-            if next(class.__getter) or #config.compress > 0 then
-                if #config.compress > 0 then
+            local compress = config:getCompress()
+            if next(class.__getter) or #compress > 0 then
+                if #compress > 0 then
                     buildKeyMap()
                     class.__index = getterFuncWithCompress
                     return getterFuncWithCompress(self, k)
@@ -229,48 +234,51 @@ function M.declare(name, super, superInit)
                 return class[k]
             end
         end
+
+        function class:__newindex(k, v)
+            local compress = config:getCompress()
+            if next(class.__setter) or #compress > 0 then
+                if #compress > 0 then
+                    buildKeyMap()
+                    class.__newindex = setterFuncWithCompress
+                    return setterFuncWithCompress(self, k, v)
+                else
+                    class.__newindex = setterFunc
+                    setterFunc(self, k, v)
+                end
+            else
+                class.__newindex = nil
+                rawset(self, k, v)
+            end
+        end
+
+        function class:__pairs()
+            if #config:getCompress() == 0 then
+                class.__pairs = nil
+                return next, self, nil
+            end
+            buildKeyMap()
+            ---@cast keyMap -?
+            ---@cast keyMapRev -?
+            return function (_, k)
+                local ik
+                if k == nil then
+                    ik = nil
+                elseif type(k) == 'string' and keyMap[k] then
+                    -- 上一次返回的是原始压缩 key，需要换回 integer slot
+                    ik = keyMap[k]
+                else
+                    ik = k
+                end
+                local nk, nv = next(self, ik)
+                if type(nk) == 'number' and keyMapRev[nk] then
+                    return keyMapRev[nk], nv
+                end
+                return nk, nv
+            end, self, nil
+        end
     end
     config.resetTrap()
-
-    function class:__newindex(k, v)
-        if next(class.__setter) or #config.compress > 0 then
-            if #config.compress > 0 then
-                buildKeyMap()
-                class.__newindex = setterFuncWithCompress
-                return setterFuncWithCompress(self, k, v)
-            else
-                class.__newindex = setterFunc
-                setterFunc(self, k, v)
-            end
-        else
-            class.__newindex = nil
-            rawset(self, k, v)
-        end
-    end
-
-    function class:__pairs()
-        if #config.compress == 0 then
-            class.__pairs = nil
-            return next, self, nil
-        end
-        buildKeyMap()
-        return function (_, k)
-            local ik
-            if k == nil then
-                ik = nil
-            elseif type(k) == 'string' and keyMap[k] then
-                -- 上一次返回的是原始压缩 key，需要换回 integer slot
-                ik = keyMap[k]
-            else
-                ik = k
-            end
-            local nk, nv = next(self, ik)
-            if type(nk) == 'number' and keyMapRev[nk] then
-                return keyMapRev[nk], nv
-            end
-            return nk, nv
-        end, self, nil
-    end
 
     function class:__encode()
         return self
@@ -281,7 +289,7 @@ function M.declare(name, super, superInit)
     end
 
     function class:__call(...)
-        config:runInit(self, ...)
+        config:runInit(self, {}, ...)
         return self
     end
 
@@ -434,41 +442,6 @@ function M.extends(name, extendsName, init)
     config:extends(extendsName, init)
 end
 
-local function createQueue()
-    local queue = {}
-    local first, last
-
-    local function push(obj)
-        if not last then
-            first, last = obj, obj
-            return
-        end
-        if first == obj or last == obj or queue[obj] ~= nil then
-            return
-        end
-        local tailObj = last
-        queue[tailObj] = obj
-        last = obj
-    end
-
-    local function pop()
-        if not first then
-            return nil
-        end
-        local obj = first
-        local nextObj = queue[obj]
-        queue[obj] = nil
-        if obj == last then
-            first, last = nil, nil
-        else
-            first = nextObj
-        end
-        return obj
-    end
-
-    return push, pop
-end
-
 ---@param errorHandler fun(msg: string)
 function M.setErrorHandler(errorHandler)
     M._errorHandler = errorHandler
@@ -520,47 +493,60 @@ function Config:extends(extendsName, init)
     }
 end
 
----返回一个类的所有继承的类，浅的排前面，深的排后面
----@private
-function Config:getAllExtendsRecursive()
-    ---@type Class.Config[]
-    local result = {}
-
-    -- 按广度优先搜索
-    local visited = {}
-    local push, pop = createQueue()
-    push(self)
-    visited[self.name] = true
-
-    while true do
-        ---@type Class.Config?
-        local current = pop()
-        if not current then
-            break
-        end
-
-        for _, info in ipairs(current.extendsList) do
-            local ext = info.name
-            if ext == self.name then
-                M._errorHandler(('class %q has circular inheritance'):format(self.name))
-                return result
-            end
-            if visited[ext] then
-                goto continue
-            end
-            visited[ext] = true
-            local cfg = M.getConfig(ext)
-            if not cfg then
-                M._errorHandler(('class %q not found'):format(ext))
-                goto continue
-            end
-            push(cfg)
-            result[#result+1] = cfg
-            ::continue::
+---返回包含所有父类（按 init 顺序）合并后的 compress 列表
+---@package
+---@return string[]
+function Config:getCompress()
+    local merged = self.mergedCompress
+    if merged then
+        return merged
+    end
+    merged = {}
+    self.mergedCompress = merged
+    for _, cfg in ipairs(self:getInitOrder()) do
+        for _, k in ipairs(cfg.compress) do
+            merged[#merged+1] = k
         end
     end
+    return merged
+end
 
-    return result
+---返回一个类静态计算出的 __init 调用顺序（去重，含 self），父类在前、self 在尾
+---__del 按此顺序的逆序执行
+---@private
+---@return Class.Config[]
+function Config:getInitOrder()
+    local order = self.initOrder
+    if order then
+        return order
+    end
+    order = {}
+    self.initOrder = order
+
+    local visited = {}
+    local function dfs(cfg)
+        if visited[cfg.name] then
+            return
+        end
+        visited[cfg.name] = true
+        for _, info in ipairs(cfg.extendsList) do
+            if info.name == self.name then
+                M._errorHandler(('class %q has circular inheritance'):format(self.name))
+                goto continue
+            end
+            local pcfg = M.getConfig(info.name)
+            if not pcfg then
+                M._errorHandler(('class %q not found'):format(info.name))
+                goto continue
+            end
+            dfs(pcfg)
+            ::continue::
+        end
+        order[#order+1] = cfg
+    end
+    dfs(self)
+
+    return order
 end
 
 ---@package
@@ -569,10 +555,8 @@ function Config:init()
         return
     end
     self.inited = true
-    self.allExtends = self:getAllExtendsRecursive()
+    self:getInitOrder() -- 触发循环继承检查并构建 initOrder 缓存
     self.extendsKeys = {}
-    -- 记录用户自身的 compress 长度，reset 时截断从父类继承追加的部分
-    self._ownCompressLen = #self.compress
 
     local class = M._classes[self.name]
     for _, info in ipairs(self.extendsList) do
@@ -603,9 +587,6 @@ function Config:init()
                 self.extendsKeys[k] = true
                 class.__setter[k] = v
             end
-        end
-        for _, k in ipairs(extendsConfig.compress) do
-            self.compress[#self.compress+1] = k
         end
         ::continue::
     end
@@ -640,7 +621,7 @@ function Config:getInitCalls()
                             M._errorHandler(('diamond inheritance: class %q already initialized, cannot call super explicitly in %q'):format(extends.name, self.name))
                             return
                         end
-                        class.__config:_runInit(obj, visited, ...)
+                        class.__config:runInit(obj, visited, ...)
                     end
                     extends.init(obj, super, ...)
                     if superCount == 0 then
@@ -650,7 +631,7 @@ function Config:getInitCalls()
             else
                 -- 没有显性传入init的，默认调用父类的init（菱形下自动去重）
                 initCalls[#initCalls+1] = function (obj, visited, ...)
-                    class.__config:_runInit(obj, visited, ...)
+                    class.__config:runInit(obj, visited, ...)
                 end
             end
             ::continue::
@@ -660,10 +641,10 @@ function Config:getInitCalls()
     return initCalls
 end
 
----@private
+---@package
 ---@param obj table
 ---@param visited table<string, boolean>
-function Config:_runInit(obj, visited, ...)
+function Config:runInit(obj, visited, ...)
     if visited[self.name] then
         return
     end
@@ -681,22 +662,11 @@ end
 
 ---@package
 ---@param obj table
----@param ... any
-function Config:runInit(obj, ...)
-    self:_runInit(obj, {}, ...)
-end
-
----@package
----@param obj table
 function Config:runDel(obj)
-    -- 析构顺序：子类先，父类后（与构造顺序相反）
-    local class = M._classes[self.name]
-    if class.__del then
-        class.__del(obj)
-    end
-
-    for _, extends in ipairs(self.allExtends) do
-        local extClass = M._classes[extends.name]
+    -- 析构顺序：按 init 顺序的逆序执行
+    local order = self:getInitOrder()
+    for i = #order, 1, -1 do
+        local extClass = M._classes[order[i].name]
         if extClass and extClass.__del then
             extClass.__del(obj)
         end
@@ -707,33 +677,27 @@ end
 ---@package
 ---@param visited? table
 function Config:reset(visited)
-    self.allExtends = nil
+    self.initOrder = nil
     self.initCalls = nil
+    self.mergedCompress = nil
 
-    if not self.inited then
-        return
-    end
-    self.inited = nil
-    self:resetTrap()
+    if self.inited then
+        self.inited = nil
+        self:resetTrap()
 
-    --清除从父类复制过来的字段，子类可能重新定义自己的字段
-    local class = M._classes[self.name]
-    if class and self.extendsKeys then
-        for k in pairs(self.extendsKeys) do
-            class[k] = nil
-            class.__getter[k] = nil
-            class.__setter[k] = nil
+        --清除从父类复制过来的字段，子类可能重新定义自己的字段
+        local class = M._classes[self.name]
+        if class and self.extendsKeys then
+            for k in pairs(self.extendsKeys) do
+                class[k] = nil
+                class.__getter[k] = nil
+                class.__setter[k] = nil
+            end
+            self.extendsKeys = nil
         end
-        self.extendsKeys = nil
-    end
-    --截断从父类继承追加进来的 compress
-    if self._ownCompressLen then
-        for i = #self.compress, self._ownCompressLen + 1, -1 do
-            self.compress[i] = nil
-        end
-        self._ownCompressLen = nil
     end
 
+    --无论本类是否 init 过，都要把缓存失效传播给已 init 的子类
     visited = visited or {}
     visited[self.name] = true
     for child in pairs(self.extendsRev) do
@@ -802,6 +766,7 @@ end
 function M.compressKeys(name, keys)
     local config = M.getConfig(name)
     config.compress = keys
+    config:reset()
 end
 
 function M.presize(name, nreq)

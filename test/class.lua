@@ -193,10 +193,12 @@ do
 
     class.extends('AA', 'AA')
 
-    local suc, err = pcall(function ()
-        class.new 'AA' ()
+    local err
+    class.setErrorHandler(function (msg)
+        err = msg
     end)
-    assert(suc == false)
+    class.new 'AA' ()
+    class.setErrorHandler(error)
     assert(err and err:find 'circular')
 end
 
@@ -209,10 +211,12 @@ do
     class.extends('AB', 'AC')
     class.extends('AC', 'AB')
 
-    local suc, err = pcall(function ()
-        class.new 'AB' ()
+    local err
+    class.setErrorHandler(function (msg)
+        err = msg
     end)
-    assert(suc == false)
+    class.new 'AB' ()
+    class.setErrorHandler(error)
     assert(err and err:find 'circular')
 end
 
@@ -495,13 +499,13 @@ do
     assert(initOrder[4] == 'CatDog')
     assert(#initOrder == 4)
 
-    -- __del 顺序：子类先，再按 BFS 顺序遍历所有父类（去重）
-    -- allExtends BFS: Cat, Dog, Animal
-    -- 所以 __del 顺序：CatDog -> Cat -> Dog -> Animal
+    -- __del 顺序：按 __init 顺序的逆序
+    -- __init 顺序：Animal -> Cat -> Dog -> CatDog
+    -- 所以 __del 顺序：CatDog -> Dog -> Cat -> Animal
     class.delete(cd)
     assert(delOrder[1] == 'CatDog')
-    assert(delOrder[2] == 'Cat')
-    assert(delOrder[3] == 'Dog')
+    assert(delOrder[2] == 'Dog')
+    assert(delOrder[3] == 'Cat')
     assert(delOrder[4] == 'Animal')
     assert(#delOrder == 4)
 end
@@ -526,6 +530,40 @@ do
     class.new 'DiaD' ()
     assert(errored, '菱形继承下显式 super 重复初始化父类应当报错')
     class.setErrorHandler(error)
+end
+
+-- alias：为已有构造函数注册别名，class.new 返回一个工厂闭包
+do
+    local function makePoint(x, y)
+        return { x = x, y = y }
+    end
+    class.alias('Point', makePoint)
+
+    -- class.new 'Point' 返回一个工厂函数
+    local factory = class.new 'Point'
+    assert(type(factory) == 'function')
+
+    local p = factory(3, 4)
+    assert(p.x == 3)
+    assert(p.y == 4)
+    -- alias 创建的实例会被打上 __class__ 标记
+    assert(p.__class__ == 'Point')
+    assert(class.type(p) == 'Point')
+
+    -- 普通 declare 类不受 alias 影响
+    class.declare 'NotAlias'
+    local na = class.new 'NotAlias' ()
+    assert(class.type(na) == 'NotAlias')
+
+    -- 名称既不在 _classes 也不在 _alias 中：触发错误
+    local err
+    class.setErrorHandler(function (msg)
+        err = msg
+    end)
+    local r = class.new 'NoSuchClass'
+    class.setErrorHandler(error)
+    assert(err and err:find 'NoSuchClass')
+    assert(r == nil)
 end
 
 print('功能测试通过')
