@@ -342,22 +342,19 @@ end
 ---@param tbl? table
 ---@return T | fun(...):T
 function M.new(name, tbl)
-    local class
-    if type(name) == 'table' then
-        -- 允许直接传入 class 对象
-        class = name
-        name = class.__name
-    else
-        class = M._classes[name]
-        if not class then
-            local aliasCreator = M._alias[name]
-            if aliasCreator then
-                return function (...)
-                    local instance = aliasCreator(...)
-                    instance.__class__ = name
-                    return instance
-                end
+    local class = M._classes[name]
+    if not class then
+        local aliasCreator = M._alias[name]
+        if aliasCreator then
+            return function (...)
+                local instance = aliasCreator(...)
+                instance.__class__ = name
+                return instance
             end
+        elseif type(name) == 'table' then
+            class = name
+            name = class.__name
+        else
             M._errorHandler(('class %q not found'):format(tostring(name)))
             return nil
         end
