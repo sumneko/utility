@@ -691,6 +691,7 @@ end
 
 ---@package
 ---@param obj table
+---@param ... any
 function Config:runInit(obj, ...)
     local initCalls = self:getInitCalls()
     for i = 1, #initCalls do
