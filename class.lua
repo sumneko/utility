@@ -289,7 +289,7 @@ function M.declare(name, super, superInit)
     end
 
     function class:__call(...)
-        config:runInit(self, {}, ...)
+        config:runInit(self, ...)
         return self
     end
 
@@ -508,42 +508,142 @@ function Config:getCompress()
     return merged
 end
 
----返回一个类静态计算出的 __init 调用顺序（去重，含 self），父类在前、self 在尾
----__del 按此顺序的逆序执行
+---构建 init 调用计划。一次 DFS 完成：
+---  * initCalls：扁平化的可调用列表（每个元素 = function(obj, ...) end），按调用顺序排列
+---  * initOrder：菱形去重后的 Class.Config 顺序，供 runDel 反序使用
+---菱形继承在构建期就被去重；显式 init 钩子的 super 也提前打包好对应的子步骤
+---@private
+function Config:buildInitPlan()
+    if self.initCalls then
+        return
+    end
+
+    local initCalls = {}
+    local initOrder = {}
+    self.initCalls = initCalls
+    self.initOrder = initOrder
+
+    local visited = {}      -- name -> true，菱形去重
+    local inProgress = {}   -- name -> true，循环继承检测
+    local selfName = self.name
+
+    local function pushSelfCall(cfg)
+        initOrder[#initOrder+1] = cfg
+        local cfgName = cfg.name
+        initCalls[#initCalls+1] = function (obj, ...)
+            local class = M._classes[cfgName]
+            if class and class.__init then
+                class.__init(obj, ...)
+            end
+        end
+    end
+
+    local expand
+
+    -- 处理 cfg 的 extendsList[i]：若带 init 钩子，把对应父类链折叠成 super() 闭包
+    local function handleExtends(info)
+        local pcfg = M.getConfig(info.name)
+        if not pcfg then
+            M._errorHandler(('class %q not found'):format(info.name))
+            return
+        end
+        if not info.init then
+            expand(pcfg)
+            return
+        end
+
+        -- 显式 init 钩子：先尝试展开父类链到 initCalls 末尾
+        local userInit = info.init
+        local parentName = info.name
+        local subStart = #initCalls + 1
+        expand(pcfg)
+        local subEnd = #initCalls
+
+        if subStart > subEnd then
+            -- 父类链整条都被去重了（菱形）→ super() 必报错
+            initCalls[#initCalls+1] = function (obj, ...)
+                local superCount = 0
+                local function super(...)
+                    superCount = superCount + 1
+                    if superCount > 1 then
+                        M._errorHandler(('super can only be called once in extends of class %q'):format(selfName))
+                        return
+                    end
+                    M._errorHandler(('diamond inheritance: class %q already initialized, cannot call super explicitly in %q'):format(parentName, selfName))
+                end
+                userInit(obj, super, ...)
+                if superCount == 0 then
+                    M._errorHandler(('super must be called in extends of class %q'):format(selfName))
+                end
+            end
+            return
+        end
+
+        -- 把 subStart..subEnd 抽出来，由 super() 触发
+        local subCalls = {}
+        for i = subStart, subEnd do
+            subCalls[#subCalls+1] = initCalls[i]
+        end
+        for i = subEnd, subStart, -1 do
+            initCalls[i] = nil
+        end
+        local subN = #subCalls
+        initCalls[#initCalls+1] = function (obj, ...)
+            local superCount = 0
+            local function super(...)
+                superCount = superCount + 1
+                if superCount > 1 then
+                    M._errorHandler(('super can only be called once in extends of class %q'):format(selfName))
+                    return
+                end
+                for i = 1, subN do
+                    subCalls[i](obj, ...)
+                end
+            end
+            userInit(obj, super, ...)
+            if superCount == 0 then
+                M._errorHandler(('super must be called in extends of class %q'):format(selfName))
+            end
+        end
+    end
+
+    expand = function (cfg)
+        local cfgName = cfg.name
+        if visited[cfgName] then
+            return
+        end
+        if inProgress[cfgName] then
+            M._errorHandler(('class %q has circular inheritance'):format(selfName))
+            return
+        end
+        inProgress[cfgName] = true
+
+        for _, info in ipairs(cfg.extendsList) do
+            handleExtends(info)
+        end
+
+        inProgress[cfgName] = nil
+        visited[cfgName] = true
+        pushSelfCall(cfg)
+    end
+
+    expand(self)
+end
+
+---返回扁平的 init 调用列表
+---@private
+---@return (fun(obj: any, ...))[]
+function Config:getInitCalls()
+    self:buildInitPlan()
+    return self.initCalls
+end
+
+---返回 __init 的执行顺序（菱形已去重），供 runDel 反序使用
 ---@private
 ---@return Class.Config[]
 function Config:getInitOrder()
-    local order = self.initOrder
-    if order then
-        return order
-    end
-    order = {}
-    self.initOrder = order
-
-    local visited = {}
-    local function dfs(cfg)
-        if visited[cfg.name] then
-            return
-        end
-        visited[cfg.name] = true
-        for _, info in ipairs(cfg.extendsList) do
-            if info.name == self.name then
-                M._errorHandler(('class %q has circular inheritance'):format(self.name))
-                goto continue
-            end
-            local pcfg = M.getConfig(info.name)
-            if not pcfg then
-                M._errorHandler(('class %q not found'):format(info.name))
-                goto continue
-            end
-            dfs(pcfg)
-            ::continue::
-        end
-        order[#order+1] = cfg
-    end
-    dfs(self)
-
-    return order
+    self:buildInitPlan()
+    return self.initOrder
 end
 
 ---@package
@@ -589,71 +689,12 @@ function Config:init()
     end
 end
 
----@private
-function Config:getInitCalls()
-    local initCalls = self.initCalls
-    if not initCalls then
-        initCalls = {}
-        self.initCalls = initCalls
-
-        for _, extends in ipairs(self.extendsList) do
-            local class = M._classes[extends.name]
-            if not class then
-                M._errorHandler(('class %q not found'):format(extends.name))
-                goto continue
-            end
-            if extends.init then
-                -- 用户主动传的init要做一次校验：
-                -- 有且仅有一次调用super
-                initCalls[#initCalls+1] = function (obj, visited, ...)
-                    local superCount = 0
-                    local function super(...)
-                        superCount = superCount + 1
-                        if superCount > 1 then
-                            M._errorHandler(('super can only be called once in extends of class %q'):format(self.name))
-                            return
-                        end
-                        if visited[extends.name] then
-                            -- 菱形继承下该父类已通过另一条链初始化
-                            M._errorHandler(('diamond inheritance: class %q already initialized, cannot call super explicitly in %q'):format(extends.name, self.name))
-                            return
-                        end
-                        class.__config:runInit(obj, visited, ...)
-                    end
-                    extends.init(obj, super, ...)
-                    if superCount == 0 then
-                        M._errorHandler(('super must be called in extends of class %q'):format(self.name))
-                    end
-                end
-            else
-                -- 没有显性传入init的，默认调用父类的init（菱形下自动去重）
-                initCalls[#initCalls+1] = function (obj, visited, ...)
-                    class.__config:runInit(obj, visited, ...)
-                end
-            end
-            ::continue::
-        end
-    end
-
-    return initCalls
-end
-
 ---@package
 ---@param obj table
----@param visited table<string, boolean>
-function Config:runInit(obj, visited, ...)
-    if visited[self.name] then
-        return
-    end
-    visited[self.name] = true
+function Config:runInit(obj, ...)
     local initCalls = self:getInitCalls()
     for i = 1, #initCalls do
-        initCalls[i](obj, visited, ...)
-    end
-
-    local class = M._classes[self.name]
-    if class.__init then
-        class.__init(obj, ...)
+        initCalls[i](obj, ...)
     end
 end
 
