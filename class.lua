@@ -56,7 +56,6 @@ M._errorHandler = error
 ---@field package extendsRev   table<string, boolean>
 ---@field private superCache   table<string, fun(...)>
 ---@field package superClass?  Class.Base
----@field public  getter       table<any, fun(obj: Class.Base)>
 ---@field package inited?      boolean
 ---@field package allExtends?  Class.Config[]
 ---@field package extendsKeys? table<string, boolean>
@@ -103,6 +102,7 @@ function M.declare(name, super, superInit)
     local getter = {}
     local setter = {}
     local keyMap
+    local keyMapRev -- integer slot -> 原始 key，仅用于 __pairs
     class.__name   = name
     class.__getter = getter
     class.__setter = setter
@@ -112,19 +112,15 @@ function M.declare(name, super, superInit)
         if keyMap then
             return
         end
-        local used = {}
-        for _, k in ipairs(config.compress) do
-            used[k] = true
+        keyMap = {}
+        keyMapRev = {}
+        for i, k in ipairs(config.compress) do
+            keyMap[k] = i
+            keyMapRev[i] = k
         end
-        local i = 1
-        keyMap = setmetatable({}, { __index = function (t, k)
-            if not used[k] then
-                t[k] = false
-                return false
-            end
-            t[k] = i
-            i = i + 1
-            return t[k]
+        setmetatable(keyMap, { __index = function (t, k)
+            t[k] = false
+            return false
         end })
     end
 
@@ -260,18 +256,19 @@ function M.declare(name, super, superInit)
         buildKeyMap()
         return function (_, k)
             local ik
-            local tp = type(k)
-            if tp == 'number' then
+            if k == nil then
+                ik = nil
+            elseif type(k) == 'string' and keyMap[k] then
+                -- 上一次返回的是原始压缩 key，需要换回 integer slot
+                ik = keyMap[k]
+            else
                 ik = k
-                k = rawget(keyMap, k)
-            elseif tp == 'string' then
-                ik = rawget(keyMap, k)
-                if not ik then
-                    return nil, nil
-                end
             end
             local nk, nv = next(self, ik)
-            return rawget(keyMap, nk) or nk, nv
+            if type(nk) == 'number' and keyMapRev[nk] then
+                return keyMapRev[nk], nv
+            end
+            return nk, nv
         end, self, nil
     end
 
@@ -337,18 +334,25 @@ end
 ---@param tbl? table
 ---@return T | fun(...):T
 function M.new(name, tbl)
-    local class = M._classes[name] or name
-    if not class then
-        local aliasCreator = M._alias[name]
-        if aliasCreator then
-            return function (...)
-                local instance = aliasCreator(...)
-                instance.__class__ = name
-                return instance
+    local class
+    if type(name) == 'table' then
+        -- 允许直接传入 class 对象
+        class = name
+        name = class.__name
+    else
+        class = M._classes[name]
+        if not class then
+            local aliasCreator = M._alias[name]
+            if aliasCreator then
+                return function (...)
+                    local instance = aliasCreator(...)
+                    instance.__class__ = name
+                    return instance
+                end
             end
+            M._errorHandler(('class %q not found'):format(tostring(name)))
+            return nil
         end
-        M._errorHandler(('class %q not found'):format(name))
-        return nil
     end
 
     local config = class.__config
@@ -402,7 +406,7 @@ end
 ---@param obj table
 ---@return boolean
 function M.isValid(obj)
-    return obj.__class__
+    return obj.__class__ ~= nil
        and not obj.__deleted__
 end
 
@@ -477,16 +481,18 @@ function Config:super(name)
         local class = M._classes[name]
         if not class then
             M._errorHandler(('class %q not found'):format(name))
+            return function () end
         end
         local super = self.superClass
         if not super then
             M._errorHandler(('class %q not inherit from any class'):format(name))
+            return function () end
         end
-        ---@cast super -?
         self.superCache[name] = function (...)
             local k, obj = debug.getlocal(2, 1)
             if k ~= 'self' then
                 M._errorHandler(('`%s()` must be called by the class'):format(name))
+                return
             end
             super.__call(obj,...)
         end
@@ -499,7 +505,8 @@ end
 ---@param init? fun(self: self, super: Extends, ...)
 function Config:extends(extendsName, init)
     if type(init) ~= 'nil' and type(init) ~= 'function' then
-        M._errorHandler(('init must be nil or function'))
+        M._errorHandler('init must be nil or function')
+        return
     end
     if self.extendsMap[extendsName] then
         return
@@ -536,6 +543,7 @@ function Config:getAllExtendsRecursive()
             local ext = info.name
             if ext == self.name then
                 M._errorHandler(('class %q has circular inheritance'):format(self.name))
+                return result
             end
             if visited[ext] then
                 goto continue
@@ -544,6 +552,7 @@ function Config:getAllExtendsRecursive()
             local cfg = M.getConfig(ext)
             if not cfg then
                 M._errorHandler(('class %q not found'):format(ext))
+                goto continue
             end
             push(cfg)
             result[#result+1] = cfg
@@ -561,7 +570,9 @@ function Config:init()
     end
     self.inited = true
     self.allExtends = self:getAllExtendsRecursive()
-    self.extendsKeys = self.extendsKeys or {}
+    self.extendsKeys = {}
+    -- 记录用户自身的 compress 长度，reset 时截断从父类继承追加的部分
+    self._ownCompressLen = #self.compress
 
     local class = M._classes[self.name]
     for _, info in ipairs(self.extendsList) do
@@ -569,44 +580,34 @@ function Config:init()
         local extends = M._classes[extendsName]
         if not extends then
             M._errorHandler(('class %q not found'):format(extendsName))
+            goto continue
         end
         local extendsConfig = extends.__config
         extendsConfig:init()
 
-        do --清除之前复制过来的字段（用于重载父类）
-            for k in pairs(self.extendsKeys) do
-                class[k] = nil
-                class.__getter[k] = nil
-                class.__setter[k] = nil
+        --复制父类的字段与 getter 和 setter
+        for k, v in pairs(extends) do
+            if not class[k] and not k:match '^__' then
+                self.extendsKeys[k] = true
+                class[k] = v
             end
         end
-        do --复制父类的字段与 getter 和 setter
-            for k, v in pairs(extends) do
-                if (not class[k] or self.extendsKeys[k])
-                and not k:match '^__' then
-                    self.extendsKeys[k] = true
-                    class[k] = v
-                end
-            end
-            for k, v in pairs(extends.__getter) do
-                if not class.__getter[k]
-                or self.extendsKeys[k] then
-                    self.extendsKeys[k] = true
-                    class.__getter[k] = v
-                end
-            end
-            for k, v in pairs(extends.__setter) do
-                if not class.__setter[k]
-                or self.extendsKeys[k] then
-                    self.extendsKeys[k] = true
-                    class.__setter[k] = v
-                end
-            end
-            local config = M.getConfig(extendsName)
-            for _, k in ipairs(config.compress) do
-                self.compress[#self.compress+1] = k
+        for k, v in pairs(extends.__getter) do
+            if not class.__getter[k] then
+                self.extendsKeys[k] = true
+                class.__getter[k] = v
             end
         end
+        for k, v in pairs(extends.__setter) do
+            if not class.__setter[k] then
+                self.extendsKeys[k] = true
+                class.__setter[k] = v
+            end
+        end
+        for _, k in ipairs(extendsConfig.compress) do
+            self.compress[#self.compress+1] = k
+        end
+        ::continue::
     end
 end
 
@@ -626,7 +627,7 @@ function Config:getInitCalls()
             if extends.init then
                 -- 用户主动传的init要做一次校验：
                 -- 有且仅有一次调用super
-                initCalls[#initCalls+1] = function (obj, ...)
+                initCalls[#initCalls+1] = function (obj, visited, ...)
                     local superCount = 0
                     local function super(...)
                         superCount = superCount + 1
@@ -634,7 +635,12 @@ function Config:getInitCalls()
                             M._errorHandler(('super can only be called once in extends of class %q'):format(self.name))
                             return
                         end
-                        class.__config:runInit(obj, ...)
+                        if visited[extends.name] then
+                            -- 菱形继承下该父类已通过另一条链初始化
+                            M._errorHandler(('diamond inheritance: class %q already initialized, cannot call super explicitly in %q'):format(extends.name, self.name))
+                            return
+                        end
+                        class.__config:_runInit(obj, visited, ...)
                     end
                     extends.init(obj, super, ...)
                     if superCount == 0 then
@@ -642,9 +648,9 @@ function Config:getInitCalls()
                     end
                 end
             else
-                -- 没有显性传入init的，默认调用父类的init
-                initCalls[#initCalls+1] = function (obj, ...)
-                    class.__config:runInit(obj, ...)
+                -- 没有显性传入init的，默认调用父类的init（菱形下自动去重）
+                initCalls[#initCalls+1] = function (obj, visited, ...)
+                    class.__config:_runInit(obj, visited, ...)
                 end
             end
             ::continue::
@@ -654,13 +660,17 @@ function Config:getInitCalls()
     return initCalls
 end
 
----@package
+---@private
 ---@param obj table
----@param ... any
-function Config:runInit(obj, ...)
+---@param visited table<string, boolean>
+function Config:_runInit(obj, visited, ...)
+    if visited[self.name] then
+        return
+    end
+    visited[self.name] = true
     local initCalls = self:getInitCalls()
     for i = 1, #initCalls do
-        initCalls[i](obj, ...)
+        initCalls[i](obj, visited, ...)
     end
 
     local class = M._classes[self.name]
@@ -671,18 +681,25 @@ end
 
 ---@package
 ---@param obj table
-function Config:runDel(obj)
-    for i = #self.allExtends, 1, -1 do
-        local extends = self.allExtends[i]
-        local class = M._classes[extends.name]
-        if class.__del then
-            class.__del(obj)
-        end
-    end
+---@param ... any
+function Config:runInit(obj, ...)
+    self:_runInit(obj, {}, ...)
+end
 
+---@package
+---@param obj table
+function Config:runDel(obj)
+    -- 析构顺序：子类先，父类后（与构造顺序相反）
     local class = M._classes[self.name]
     if class.__del then
         class.__del(obj)
+    end
+
+    for _, extends in ipairs(self.allExtends) do
+        local extClass = M._classes[extends.name]
+        if extClass and extClass.__del then
+            extClass.__del(obj)
+        end
     end
 end
 
@@ -698,6 +715,24 @@ function Config:reset(visited)
     end
     self.inited = nil
     self:resetTrap()
+
+    --清除从父类复制过来的字段，子类可能重新定义自己的字段
+    local class = M._classes[self.name]
+    if class and self.extendsKeys then
+        for k in pairs(self.extendsKeys) do
+            class[k] = nil
+            class.__getter[k] = nil
+            class.__setter[k] = nil
+        end
+        self.extendsKeys = nil
+    end
+    --截断从父类继承追加进来的 compress
+    if self._ownCompressLen then
+        for i = #self.compress, self._ownCompressLen + 1, -1 do
+            self.compress[i] = nil
+        end
+        self._ownCompressLen = nil
+    end
 
     visited = visited or {}
     visited[self.name] = true
@@ -757,6 +792,11 @@ function M.flush(obj)
     end
 end
 
+--- 为类启用字段压缩：将指定的 string key 映射到整数槽位，
+--- 减小实例 hash 部分的开销。
+---
+--- **注意**：启用压缩后，该类实例不能再以正整数作为 key 写入
+--- （会与压缩槽位冲突，覆盖或读到错误数据）。
 ---@param name string | table
 ---@param keys string[]
 function M.compressKeys(name, keys)

@@ -288,9 +288,9 @@ do
 
     class.delete(del)
 
-    assert(result[1] == 'A')
+    assert(result[1] == 'C')
     assert(result[2] == 'B')
-    assert(result[3] == 'C')
+    assert(result[3] == 'A')
 end
 
 do
@@ -382,6 +382,150 @@ do
     assert(class.isInstanceOf(gc2, 'GB2') == true)
     assert(class.isInstanceOf(gc2, 'GC2') == true)
     assert(class.isInstanceOf(gc2, 'GB1') == false)
+end
+
+-- __init 调用顺序：父类先，子类后（与析构相反）
+do
+    local result = {}
+
+    local INIT_A = class.declare 'INIT_A'
+    function INIT_A:__init()
+        result[#result+1] = 'A'
+    end
+
+    local INIT_B = class.declare('INIT_B', 'INIT_A')
+    function INIT_B:__init()
+        result[#result+1] = 'B'
+    end
+
+    local INIT_C = class.declare('INIT_C', 'INIT_B')
+    function INIT_C:__init()
+        result[#result+1] = 'C'
+    end
+
+    class.new 'INIT_C' ()
+
+    assert(result[1] == 'A')
+    assert(result[2] == 'B')
+    assert(result[3] == 'C')
+end
+
+-- 菱形继承
+--      Animal
+--      /    \
+--    Cat    Dog
+--      \    /
+--      CatDog
+do
+    local initOrder = {}
+    local delOrder = {}
+
+    ---@class Animal
+    local Animal = class.declare 'Animal'
+    function Animal:__init()
+        initOrder[#initOrder+1] = 'Animal'
+        self.species = (self.species or '') .. 'Animal;'
+    end
+    function Animal:__del()
+        delOrder[#delOrder+1] = 'Animal'
+    end
+    function Animal:breathe()
+        return 'breathe'
+    end
+
+    ---@class Cat: Animal
+    local Cat = class.declare('Cat', 'Animal')
+    function Cat:__init()
+        initOrder[#initOrder+1] = 'Cat'
+        self.species = self.species .. 'Cat;'
+    end
+    function Cat:__del()
+        delOrder[#delOrder+1] = 'Cat'
+    end
+    function Cat:meow()
+        return 'meow'
+    end
+
+    ---@class Dog: Animal
+    local Dog = class.declare('Dog', 'Animal')
+    function Dog:__init()
+        initOrder[#initOrder+1] = 'Dog'
+        self.species = self.species .. 'Dog;'
+    end
+    function Dog:__del()
+        delOrder[#delOrder+1] = 'Dog'
+    end
+    function Dog:bark()
+        return 'bark'
+    end
+
+    ---@class CatDog: Cat, Dog
+    local CatDog = class.declare 'CatDog'
+    class.extends('CatDog', 'Cat')
+    class.extends('CatDog', 'Dog')
+    function CatDog:__init()
+        initOrder[#initOrder+1] = 'CatDog'
+        self.species = self.species .. 'CatDog;'
+    end
+    function CatDog:__del()
+        delOrder[#delOrder+1] = 'CatDog'
+    end
+
+    local cd = class.new 'CatDog' ()
+
+    -- isInstanceOf：四种类型都满足
+    assert(class.isInstanceOf(cd, 'CatDog') == true)
+    assert(class.isInstanceOf(cd, 'Cat') == true)
+    assert(class.isInstanceOf(cd, 'Dog') == true)
+    assert(class.isInstanceOf(cd, 'Animal') == true)
+
+    -- 继承父类的方法
+    assert(cd:breathe() == 'breathe')
+    assert(cd:meow() == 'meow')
+    assert(cd:bark() == 'bark')
+
+    -- species 字段累积反映同一调用顺序
+    assert(cd.species == 'Animal;Cat;Dog;CatDog;')
+
+    -- __init 顺序：菱形继承下 Animal 只被调用一次
+    -- Cat 链：Animal -> Cat；Dog 链：Animal 已 visited 跳过 -> Dog；自身：CatDog
+    assert(initOrder[1] == 'Animal')
+    assert(initOrder[2] == 'Cat')
+    assert(initOrder[3] == 'Dog')
+    assert(initOrder[4] == 'CatDog')
+    assert(#initOrder == 4)
+
+    -- __del 顺序：子类先，再按 BFS 顺序遍历所有父类（去重）
+    -- allExtends BFS: Cat, Dog, Animal
+    -- 所以 __del 顺序：CatDog -> Cat -> Dog -> Animal
+    class.delete(cd)
+    assert(delOrder[1] == 'CatDog')
+    assert(delOrder[2] == 'Cat')
+    assert(delOrder[3] == 'Dog')
+    assert(delOrder[4] == 'Animal')
+    assert(#delOrder == 4)
+end
+
+-- 菱形继承下，通过 super 显式重复初始化已被另一条链初始化的父类应当报错
+do
+    class.declare 'DiaA'
+    class.declare 'DiaB'
+    class.extends('DiaB', 'DiaA')  -- B -> A，不显式 super，自动调
+    class.declare 'DiaC'
+    class.extends('DiaC', 'DiaA', function (self, super)
+        super()  -- C -> A，显式 super
+    end)
+    class.declare 'DiaD'
+    class.extends('DiaD', 'DiaB')  -- 先走 B 链：A, B（A 被初始化）
+    class.extends('DiaD', 'DiaC')  -- 再走 C 链：C 的钩子调 super() 试图初始化已 visited 的 A
+
+    local errored = false
+    class.setErrorHandler(function (msg)
+        errored = true
+    end)
+    class.new 'DiaD' ()
+    assert(errored, '菱形继承下显式 super 重复初始化父类应当报错')
+    class.setErrorHandler(error)
 end
 
 print('功能测试通过')
