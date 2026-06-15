@@ -194,3 +194,337 @@ do
 end
 
 print('SharedTable 测试通过')
+
+-- 性能测试
+print('开始 SharedTable 性能测试')
+
+-- create 大表（扁平）
+do
+    local n = 10000
+    local data = {}
+    for i = 1, n do
+        data[i] = i
+    end
+    local times = 50
+    local c1 = os.clock()
+    for _ = 1, times do
+        sharedTable.create(data)
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  create %d 元素扁平表 x %d: 总 %.3f 毫秒, 平均 %.4f 微秒/次',
+        n, times, total, total * 1000 / times))
+end
+
+-- 顶层写入
+do
+    local n = 100000
+    local times = 5
+    local sts = {}
+    for i = 1, times do
+        sts[i] = sharedTable.create()
+    end
+    local c1 = os.clock()
+    for k = 1, times do
+        local trap = sts[k].trap
+        for i = 1, n do
+            trap[i] = i
+        end
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  顶层写入 %d 次 x %d: 总 %.3f 毫秒, 平均 %.4f 微秒/次',
+        n, times, total, total * 1000 / (n * times)))
+end
+
+-- 深层路径写入
+do
+    local n = 100000
+    local times = 5
+    local sts = {}
+    for i = 1, times do
+        sts[i] = sharedTable.create({ a = { b = { c = { d = { e = 0 } } } } })
+    end
+    local c1 = os.clock()
+    for k = 1, times do
+        local trap = sts[k].trap
+        for i = 1, n do
+            trap.a.b.c.d.e = i
+        end
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  5层深路径写入 %d 次 x %d: 总 %.3f 毫秒, 平均 %.4f 微秒/次 ',
+        n, times, total, total * 1000 / (n * times)))
+end
+
+-- exportChanges（少量顶层 set）
+do
+    local n = 50
+    local times = 10000
+    local sts = {}
+    for k = 1, times do
+        local st = sharedTable.create()
+        local trap = st.trap
+        for i = 1, n do
+            trap[i] = i
+        end
+        sts[k] = st
+    end
+    local c1 = os.clock()
+    for k = 1, times do
+        sts[k]:exportChanges()
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  exportChanges (%d 顶层 set) x %d: 总 %.3f 毫秒, 平均 %.4f 毫秒/次',
+        n, times, total, total / times))
+end
+
+-- importChanges（少量顶层 set）
+do
+    local n = 50
+    local times = 10000
+    local st = sharedTable.create()
+    local recv = sharedTable.load(st:dump())
+    local trap = st.trap
+    for i = 1, n do
+        trap[i] = i
+    end
+    local changes = st:exportChanges()
+    assert(changes)
+    local c1 = os.clock()
+    for _ = 1, times do
+        sharedTable.importChanges(recv, changes)
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  importChanges (%d 顶层 set) x %d: 总 %.3f 毫秒, 平均 %.4f 毫秒/次',
+        n, times, total, total / times))
+end
+
+-- exportChanges（大量顶层 set）
+do
+    local n = 50000
+    local times = 20
+    local sts = {}
+    for k = 1, times do
+        local st = sharedTable.create()
+        local trap = st.trap
+        for i = 1, n do
+            trap[i] = i
+        end
+        sts[k] = st
+    end
+    local c1 = os.clock()
+    for k = 1, times do
+        sts[k]:exportChanges()
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  exportChanges (%d 顶层 set) x %d: 总 %.3f 毫秒, 平均 %.4f 毫秒/次',
+        n, times, total, total / times))
+end
+
+-- importChanges（大量顶层 set）
+do
+    local n = 50000
+    local times = 20
+    local st = sharedTable.create()
+    local recv = sharedTable.load(st:dump())
+    local trap = st.trap
+    for i = 1, n do
+        trap[i] = i
+    end
+    local changes = st:exportChanges()
+    assert(changes)
+    local c1 = os.clock()
+    for _ = 1, times do
+        sharedTable.importChanges(recv, changes)
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  importChanges (%d 顶层 set) x %d: 总 %.3f 毫秒, 平均 %.4f 毫秒/次',
+        n, times, total, total / times))
+end
+
+-- 插入嵌套子表（写入阶段）
+do
+    local n = 5000
+    local times = 20
+    local sts = {}
+    for k = 1, times do
+        local st = sharedTable.create()
+        st:exportChanges()
+        sts[k] = st
+    end
+    local c1 = os.clock()
+    for k = 1, times do
+        local trap = sts[k].trap
+        for i = 1, n do
+            trap[i] = { id = i, sub = { v = i * 2 } }
+        end
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  插入 %d 个嵌套子表 x %d (写入阶段): 总 %.3f 毫秒, 平均 %.4f 毫秒/次',
+        n, times, total, total / times))
+end
+
+-- exportChanges（新嵌套 newBind）
+do
+    local n = 5000
+    local times = 20
+    local sts = {}
+    for k = 1, times do
+        local st = sharedTable.create()
+        st:exportChanges()
+        local trap = st.trap
+        for i = 1, n do
+            trap[i] = { id = i, sub = { v = i * 2 } }
+        end
+        sts[k] = st
+    end
+    local c1 = os.clock()
+    for k = 1, times do
+        sts[k]:exportChanges()
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  exportChanges (%d 新嵌套 newBind) x %d: 总 %.3f 毫秒, 平均 %.4f 毫秒/次',
+        n * 2, times, total, total / times))
+end
+
+-- importChanges（新嵌套）
+do
+    local n = 5000
+    local times = 20
+    local st = sharedTable.create()
+    local recv = sharedTable.load(st:dump())
+    st:exportChanges()
+    local trap = st.trap
+    for i = 1, n do
+        trap[i] = { id = i, sub = { v = i * 2 } }
+    end
+    local changes = st:exportChanges()
+    assert(changes)
+    local c1 = os.clock()
+    for _ = 1, times do
+        sharedTable.importChanges(recv, changes)
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  importChanges (%d 新嵌套) x %d: 总 %.3f 毫秒, 平均 %.4f 毫秒/次',
+        n * 2, times, total, total / times))
+end
+
+-- create 深嵌套大表
+do
+    local function build(depth, width)
+        if depth == 0 then
+            return 1
+        end
+        local t = {}
+        for i = 1, width do
+            t[i] = build(depth - 1, width)
+        end
+        return t
+    end
+    local times = 20
+    local datas = {}
+    for k = 1, times do
+        local d = build(5, 8) -- 8^5 = 32768 叶子
+        ---@cast d table
+        datas[k] = d
+    end
+    local c1 = os.clock()
+    for k = 1, times do
+        sharedTable.create(datas[k])
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  create 深嵌套大表 (depth=5,width=8) x %d: 总 %.3f 毫秒, 平均 %.4f 毫秒/次',
+        times, total, total / times))
+end
+
+-- dump 深嵌套大表
+do
+    local function build(depth, width)
+        if depth == 0 then
+            return 1
+        end
+        local t = {}
+        for i = 1, width do
+            t[i] = build(depth - 1, width)
+        end
+        return t
+    end
+    local data = build(5, 8)
+    ---@cast data table
+    local st = sharedTable.create(data)
+    local times = 50
+    local c1 = os.clock()
+    for _ = 1, times do
+        st:dump()
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  dump 深嵌套大表 x %d: 总 %.3f 毫秒, 平均 %.4f 毫秒/次',
+        times, total, total / times))
+end
+
+-- load 深嵌套大表
+do
+    local function build(depth, width)
+        if depth == 0 then
+            return 1
+        end
+        local t = {}
+        for i = 1, width do
+            t[i] = build(depth - 1, width)
+        end
+        return t
+    end
+    local times = 50
+    local dumps = {}
+    for k = 1, times do
+        local d = build(5, 8)
+        ---@cast d table
+        dumps[k] = sharedTable.create(d):dump()
+    end
+    local c1 = os.clock()
+    for k = 1, times do
+        sharedTable.load(dumps[k])
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  load 深嵌套大表 x %d: 总 %.3f 毫秒, 平均 %.4f 毫秒/次',
+        times, total, total / times))
+end
+
+-- 增量修改稳态（典型用例）
+do
+    local fields = 1000
+    local rounds = 1000
+    local st = sharedTable.create()
+    local recv = sharedTable.load(st:dump())
+    for i = 1, fields do
+        st.trap[i] = { hp = 100, mp = 50 }
+    end
+    sharedTable.importChanges(recv, assert(st:exportChanges()))
+
+    local trap = st.trap
+    local c1 = os.clock()
+    for r = 1, rounds do
+        for i = 1, fields do
+            trap[i].hp = r
+        end
+        sharedTable.importChanges(recv, assert(st:exportChanges()))
+    end
+    local c2 = os.clock()
+    local total = (c2 - c1) * 1000
+    print(string.format('  增量循环 %d 轮 x %d 字段: 总 %.3f 毫秒, 平均 %.4f 毫秒/轮',
+        rounds, fields, total, total / rounds))
+end
+
+print('SharedTable 性能测试完成')
