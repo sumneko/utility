@@ -11,7 +11,7 @@ local tableSort    = table.sort
 ---@class Serialization
 local M = {}
 
-M.version = '1.0.0'
+M.version = '1.1.0'
 
 local Number  = 'N'
 local UInt8   = 'I'
