@@ -8,12 +8,8 @@ local stringSub    = string.sub
 local tableConcat  = table.concat
 local tableSort    = table.sort
 
----@class Serialization
-local M = {}
-
-M.version = '1.1.0'
-
-local Number  = 'N'
+local Number  = 'N' -- 本地编码的数字
+local Double  = 'D' -- 双精度浮点数
 local UInt8   = 'I'
 local UInt16  = 'J'
 local UInt24  = 'O'
@@ -261,29 +257,15 @@ local encodeMethods;encodeMethods = {
 
 function encode(value, buf, ex, disableHook)
     local tp = type(value)
-    encodeMethods[tp](value, buf, ex, disableHook)
-end
-
--- 将一个Lua值序列化为二进制数据。请勿做为长期存储方案，因为二进制数据可能会因为版本更新而不兼容。
----@param data Serialization.SupportTypes | nil
----@param hook? fun(value: table): Serialization.SupportTypes | nil, string?
----@param ignoreUnknownType? boolean
----@return string
-function M.encode(data, hook, ignoreUnknownType)
-    if data == nil then
-        return ''
+    local f = encodeMethods[tp]
+    if f then
+        f(value, buf, ex, disableHook)
+        return
     end
-    local buf = {}
-
-    encode(data, buf, {
-        refid = 0,
-        refMap = {},
-        simpleMap = {},
-        hook = hook,
-        ignoreUnknownType = ignoreUnknownType,
-    })
-
-    return tableConcat(buf)
+    if ex.ignoreUnknownType then
+        return
+    end
+    error('不支持的类型：' .. tp)
 end
 
 local decode
@@ -540,6 +522,33 @@ function decode(ex)
     local tp = stringSub(ex.str, ex.index, ex.index)
     ex.index = ex.index + 1
     return decodeMethods[tp](ex)
+end
+
+---@class Serialization
+local M = {}
+
+M.version = '1.1.0'
+
+-- 将一个Lua值序列化为二进制数据。请勿做为长期存储方案，因为二进制数据可能会因为版本更新而不兼容。
+---@param data Serialization.SupportTypes | nil
+---@param hook? fun(value: table): Serialization.SupportTypes | nil, string?
+---@param ignoreUnknownType? boolean
+---@return string
+function M.encode(data, hook, ignoreUnknownType)
+    if data == nil then
+        return ''
+    end
+    local buf = {}
+
+    encode(data, buf, {
+        refid = 0,
+        refMap = {},
+        simpleMap = {},
+        hook = hook,
+        ignoreUnknownType = ignoreUnknownType,
+    })
+
+    return tableConcat(buf)
 end
 
 -- 反序列化二进制数据为Lua值
