@@ -1,4 +1,4 @@
-local proxy = require 'proxy'
+local proxy
 
 local MODE_K = { __mode = 'k' }
 local MODE_V = { __mode = 'v' }
@@ -10,6 +10,7 @@ M.__index = M
 ---@param default? table
 ---@return SharedTable
 function M:init(default)
+    proxy = proxy or require 'proxy'
     self.value = default or {}
     ---@type { [table]: integer }
     self.bindMap = setmetatable({}, MODE_K)
@@ -108,23 +109,31 @@ function M:exportChanges()
         if id then
             return id
         end
-        id = self.bindId + 1
-        self.bindId = id
-        self.bindMap[t] = id
+
         if not newBind then
             newBind = {}
         end
-        newBind[t] = id
-        if not set then
-            set = {}
+        local queue = { t }
+        while true do
+            local current = queue[#queue]
+            if not current then
+                break
+            end
+            queue[#queue] = nil
+
+            id = self.bindId + 1
+            self.bindId = id
+            self.bindMap[current] = id
+            newBind[current] = id
+
+            for _, v in pairs(current) do
+                if type(v) == 'table' and not self.bindMap[v] then
+                    queue[#queue+1] = v
+                end
+            end
         end
-        local kv = {}
-        set[id] = kv
-        for k, v in pairs(t) do
-            kv[k] = v
-            getId(v)
-        end
-        return id
+
+        return self.bindMap[t]
     end
 
     local function updateResult(raw, key)
@@ -177,6 +186,10 @@ local API = {}
 ---@private
 ---@type table<table, table<integer, table>>
 API.tableToBind = setmetatable({}, MODE_K)
+
+function API.setTools(proxyLib)
+    proxy = proxyLib
+end
 
 ---@param default? table
 ---@return SharedTable
