@@ -10,6 +10,7 @@ local tableSort    = table.sort
 
 local Number  = 'N' -- 本地编码的数字
 local Double  = 'D' -- 双精度浮点数
+local NumZero = 'o'
 local UInt8   = 'I'
 local UInt16  = 'J'
 local UInt24  = 'O'
@@ -99,8 +100,53 @@ local encodeMethods;encodeMethods = {
         if mathType(value) == 'integer' then
             if value >= 0 then
                 if value < 10 then
-                    buf[#buf+1] = tostring(value)
-                    return
+                    if value == 0 then
+                        buf[#buf+1] = I0
+                        return
+                    end
+                    if value < 5 then
+                        if value < 3 then
+                            if value == 1 then
+                                buf[#buf+1] = I1
+                                return
+                            end
+                            if value == 2 then
+                                buf[#buf+1] = I2
+                                return
+                            end
+                        else
+                            if value == 3 then
+                                buf[#buf+1] = I3
+                                return
+                            end
+                            if value == 4 then
+                                buf[#buf+1] = I4
+                                return
+                            end
+                        end
+                    elseif value < 8 then
+                        if value == 5 then
+                            buf[#buf+1] = I5
+                            return
+                        end
+                        if value == 6 then
+                            buf[#buf+1] = I6
+                            return
+                        end
+                        if value == 7 then
+                            buf[#buf+1] = I7
+                            return
+                        end
+                    else
+                        if value == 8 then
+                            buf[#buf+1] = I8
+                            return
+                        end
+                        if value == 9 then
+                            buf[#buf+1] = I9
+                            return
+                        end
+                    end
                 end
                 if value < (1 << 8) then
                     buf[#buf+1] = UInt8 .. stringPack('<I1', value)
@@ -116,9 +162,13 @@ local encodeMethods;encodeMethods = {
                     return
                 end
             end
-            buf[#buf+1] = Int64 .. stringPack('<j', value)
+            buf[#buf+1] = Int64 .. stringPack('<i8', value)
         else
-            buf[#buf+1] = Number .. stringPack('<n', value)
+            if value == 0.0 then
+                buf[#buf+1] = NumZero
+                return
+            end
+            buf[#buf+1] = Double .. stringPack('<d', value)
         end
     end,
     ['string'] = function (value, buf, ex)
@@ -272,34 +322,42 @@ local decode
 
 local decodeMethods;decodeMethods = {
     [Number] = function (ex)
-        local value, newIndex = stringUnpack('n', ex.str, ex.index)
+        local value, newIndex = stringUnpack('<n', ex.str, ex.index)
+        ex.index = newIndex
+        return value
+    end,
+    [Double] = function (ex)
+        local value, newIndex = stringUnpack('<d', ex.str, ex.index)
         ex.index = newIndex
         return value
     end,
     [UInt8] = function (ex)
-        local value, newIndex = stringUnpack('I1', ex.str, ex.index)
+        local value, newIndex = stringUnpack('<I1', ex.str, ex.index)
         ex.index = newIndex
         return value
     end,
     [UInt16] = function (ex)
-        local value, newIndex = stringUnpack('I2', ex.str, ex.index)
+        local value, newIndex = stringUnpack('<I2', ex.str, ex.index)
         ex.index = newIndex
         return value
     end,
     [UInt24] = function (ex)
-        local value, newIndex = stringUnpack('I3', ex.str, ex.index)
+        local value, newIndex = stringUnpack('<I3', ex.str, ex.index)
         ex.index = newIndex
         return value
     end,
     [UInt32] = function (ex)
-        local value, newIndex = stringUnpack('I4', ex.str, ex.index)
+        local value, newIndex = stringUnpack('<I4', ex.str, ex.index)
         ex.index = newIndex
         return value
     end,
     [Int64] = function (ex)
-        local value, newIndex = stringUnpack('j', ex.str, ex.index)
+        local value, newIndex = stringUnpack('<i8', ex.str, ex.index)
         ex.index = newIndex
         return value
+    end,
+    [NumZero] = function ()
+        return 0.0
     end,
     [I0] = function ()
         return 0
@@ -350,7 +408,7 @@ local decodeMethods;decodeMethods = {
         return value
     end,
     [Str8] = function (ex)
-        local value, newIndex = stringUnpack('s1', ex.str, ex.index)
+        local value, newIndex = stringUnpack('<s1', ex.str, ex.index)
         ex.index = newIndex
         if #value > RefStrLen then
             ex.ref = ex.ref + 1
@@ -359,7 +417,7 @@ local decodeMethods;decodeMethods = {
         return value
     end,
     [Str16] = function (ex)
-        local value, newIndex = stringUnpack('s2', ex.str, ex.index)
+        local value, newIndex = stringUnpack('<s2', ex.str, ex.index)
         ex.index = newIndex
         if #value > RefStrLen then
             ex.ref = ex.ref + 1
@@ -368,7 +426,7 @@ local decodeMethods;decodeMethods = {
         return value
     end,
     [Str32] = function (ex)
-        local value, newIndex = stringUnpack('s4', ex.str, ex.index)
+        local value, newIndex = stringUnpack('<s4', ex.str, ex.index)
         ex.index = newIndex
         if #value > RefStrLen then
             ex.ref = ex.ref + 1
@@ -527,7 +585,7 @@ end
 ---@class Serialization
 local M = {}
 
-M.version = '1.1.0'
+M.version = '1.2.0'
 
 -- 将一个Lua值序列化为二进制数据。请勿做为长期存储方案，因为二进制数据可能会因为版本更新而不兼容。
 ---@param data Serialization.SupportTypes | nil
