@@ -107,22 +107,22 @@ local encodeMethods;encodeMethods = {
                     return
                 end
                 if value < (1 << 8) then
-                    buf[#buf+1] = UInt8 .. stringPack('I1', value)
+                    buf[#buf+1] = UInt8 .. stringPack('<I1', value)
                     return
                 elseif value < (1 << 16) then
-                    buf[#buf+1] = UInt16 .. stringPack('I2', value)
+                    buf[#buf+1] = UInt16 .. stringPack('<I2', value)
                     return
                 elseif value < (1 << 24) then
-                    buf[#buf+1] = UInt24 .. stringPack('I3', value)
+                    buf[#buf+1] = UInt24 .. stringPack('<I3', value)
                     return
                 elseif value < (1 << 32) then
-                    buf[#buf+1] = UInt32 .. stringPack('I4', value)
+                    buf[#buf+1] = UInt32 .. stringPack('<I4', value)
                     return
                 end
             end
-            buf[#buf+1] = Int64 .. stringPack('j', value)
+            buf[#buf+1] = Int64 .. stringPack('<j', value)
         else
-            buf[#buf+1] = Number .. stringPack('n', value)
+            buf[#buf+1] = Number .. stringPack('<n', value)
         end
     end,
     ['string'] = function (value, buf, ex)
@@ -140,11 +140,11 @@ local encodeMethods;encodeMethods = {
         elseif len == 2 then
             buf[#buf+1] = Char2 .. value
         elseif len < (1 << 8) then
-            buf[#buf+1] = Str8 .. stringPack('s1', value)
+            buf[#buf+1] = Str8 .. stringPack('<s1', value)
         elseif len < (1 << 16) then
-            buf[#buf+1] = Str16 .. stringPack('s2', value)
+            buf[#buf+1] = Str16 .. stringPack('<s2', value)
         elseif len < (1 << 32) then
-            buf[#buf+1] = Str32 .. stringPack('s4', value)
+            buf[#buf+1] = Str32 .. stringPack('<s4', value)
         else
             error('不支持这么长的字符串！')
         end
