@@ -76,10 +76,13 @@ local function peekTable(t)
         keys[#keys+1] = k
         local tp = type(k)
         if tp == 'number' then
-            if  maxInteger
-            and k > maxInteger
-            and mathType(k) == 'integer' then
-                maxInteger = k --[[@as integer]]
+            if mathType(k) == 'integer' and k > 0 then
+                if maxInteger and k > maxInteger then
+                    maxInteger = k --[[@as integer]]
+                end
+            else
+                -- 负整数 / 0 / 浮点 key 不能进入数组形态
+                maxInteger = nil
             end
         elseif tp == 'string' then
             maxInteger = nil
@@ -295,8 +298,12 @@ local encodeMethods;encodeMethods = {
                     encode(v, buf, ex)
                 else
                     -- 混合表部分
-                    encode(k, buf, ex)
-                    encode(v, buf, ex)
+                    if ex.ignoreUnknownType and not encodeMethods[type(k)] then
+                        -- key 类型不支持，整对跳过，避免解码端 value[nil] 报错
+                    else
+                        encode(k, buf, ex)
+                        encode(v, buf, ex)
+                    end
                 end
             end
 
@@ -313,6 +320,8 @@ function encode(value, buf, ex, disableHook)
         return
     end
     if ex.ignoreUnknownType then
+        -- 写入 Nil 占位，避免破坏外层结构（数组长度、哈希 k/v 配对等）
+        buf[#buf+1] = Nil
         return
     end
     error('不支持的类型：' .. tp)
@@ -570,6 +579,9 @@ local decodeMethods;decodeMethods = {
         ---@cast value -?
         local tag = decode(ex)
         ---@cast tag string | false
+        if not ex.hook then
+            error('反序列化遇到自定义数据但未提供 hook，tag=' .. tostring(tag or nil))
+        end
         value = ex.hook(value, tag or nil)
         return value
     end,
