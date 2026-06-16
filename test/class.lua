@@ -284,6 +284,21 @@ do
     assert(m.y == 2)
 end
 
+-- 直接在类上访问扩展字段
+do
+    local M1 = class.declare 'VISIT_EXTENDS_CHILD'
+
+    M1.x = 1
+
+    local M2 = class.declare 'VISIT_EXTENDS_CHILD_PARENT'
+
+    M2.y = 2
+
+    class.extends('VISIT_EXTENDS_CHILD', 'VISIT_EXTENDS_CHILD_PARENT')
+
+    assert(M1.y == 2)
+end
+
 do
     local result = {}
     local DEL_A = class.declare 'DEL_A'
