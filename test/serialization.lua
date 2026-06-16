@@ -315,8 +315,14 @@ end
 do
     -- 默认应 error
     local t = { x = 1, fn = function () end, y = 2 }
-    local ok = pcall(seri.encode, t)
-    assert(not ok, '未忽略未知类型时应报错')
+    local lastErrorMsg
+    local originError = error
+    _G.error = function (e)
+        lastErrorMsg = e
+    end
+    seri.encode(t)
+    _G.error = originError
+    assert(lastErrorMsg, '未忽略未知类型时应报错')
 
     -- 忽略后：fn value → Nil 占位，x/y 正常保留
     local t2 = { x = 1, fn = function () end, y = 2 }
@@ -370,9 +376,15 @@ do
     end
     local bin = seri.encode({ tag = 'x' }, enc)
     -- 不传 hook 解码应 error
-    local ok, err = pcall(seri.decode, bin)
-    assert(not ok, '缺 hook 解码 Custom 数据应报错')
-    assert(type(err) == 'string' and err:find('hook'), 'error 信息应提及 hook，实际：' .. tostring(err))
+    local originError = error
+    local lastErrorMsg
+    _G.error = function (e)
+        lastErrorMsg = e
+    end
+    seri.decode(bin)
+    _G.error = originError
+    assert(lastErrorMsg, '缺 hook 解码 Custom 数据应报错')
+    assert(type(lastErrorMsg) == 'string' and lastErrorMsg:find('hook'), 'error 信息应提及 hook，实际：' .. tostring(lastErrorMsg))
 end
 
 -- 顶层 nil

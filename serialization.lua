@@ -1,5 +1,4 @@
 local type         = type
-local error        = error
 local tostring     = tostring
 local mathType     = math.type
 local stringPack   = string.pack
@@ -579,10 +578,12 @@ local decodeMethods;decodeMethods = {
         ---@cast value -?
         local tag = decode(ex)
         ---@cast tag string | false
-        if not ex.hook then
+        if ex.hook then
+            value = ex.hook(value, tag or nil)
+        else
+            value = nil
             error('反序列化遇到自定义数据但未提供 hook，tag=' .. tostring(tag or nil))
         end
-        value = ex.hook(value, tag or nil)
         return value
     end,
 }

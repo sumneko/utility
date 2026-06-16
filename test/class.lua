@@ -268,6 +268,22 @@ do
     end)
 end
 
+-- 多次定义同一个类要合并字段
+do
+    local M1 = class.declare 'MERGE'
+
+    M1.x = 1
+
+    local M2 = class.declare 'MERGE'
+
+    M2.y = 2
+
+    local m = class.new 'MERGE' ()
+
+    assert(m.x == 1)
+    assert(m.y == 2)
+end
+
 do
     local result = {}
     local DEL_A = class.declare 'DEL_A'
