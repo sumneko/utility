@@ -120,6 +120,7 @@ end
 ---立即检查指定表是否被篡改
 ---@param t table
 ---@param recursive? boolean # 是否递归检查子表
+---@return boolean
 function M:check(t, recursive)
     local status = self.tables[t]
     if not status then
@@ -168,6 +169,7 @@ end
 local API = {}
 
 ---@param isWeakRef? boolean # 是否是弱引用，如果是会使用弱表
+---@return TamperChecker
 function API.create(isWeakRef)
     local checker = setmetatable({}, M)
     checker:init(isWeakRef)
