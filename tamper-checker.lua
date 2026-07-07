@@ -88,6 +88,8 @@ end
 ---@type table?
 M.lastTable = nil
 
+M.checkTimes = 0
+
 ---检查所有加入的表是否被篡改
 ---@param maxTime? number # 最大检查时间（秒）
 ---@return string[]?
@@ -98,6 +100,7 @@ function M:checkAll(maxTime)
     local currentTable = self.lastTable
     local tampered = nil
     while true do
+        self.checkTimes = self.checkTimes + 1
         if maxTime and maxTime + startTime < self.clock() then
             self.lastTable = currentTable
             return tampered, 'timeout'
