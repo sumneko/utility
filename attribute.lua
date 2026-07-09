@@ -323,7 +323,7 @@ function Define:getAttrCode(name)
         error('Unknown attribute: ' .. name)
     end
     if def.simple then
-        return format('cache[{key}]', { key = name })
+        return format('(cache[{key}] or 0)', { key = name })
     else
         return format('methods[{key}].get(instance)', { key = name })
     end

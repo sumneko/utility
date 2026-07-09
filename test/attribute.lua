@@ -264,6 +264,18 @@ do
     assert(instance:get('未知属性') == 1500)
 end
 
+do
+    local system = attributeSystem.create()
+
+    system:define('生命', false, 0, '最大生命')
+    system:define('最大生命', true, 1000)
+
+    local instance = system:instance()
+
+    assert(instance:get('生命') == 0)
+    assert(instance:get('最大生命') == 0)
+end
+
 -------------- 性能测试 -------------
 
 do
