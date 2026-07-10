@@ -899,7 +899,7 @@ function Instance:event(name, callback)
         end
         disposed = true
 
-        if events[firstTry][2] == proxy then
+        if events[firstTry] and events[firstTry][2] == proxy then
             events[firstTry] = events[#events]
             events[#events] = nil
         else
