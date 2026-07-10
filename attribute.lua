@@ -2,6 +2,7 @@
 local API = {}
 
 ---@class Attribute.System
+---@field package instID integer
 ---@field package compiled? boolean
 ---@field package supportUnknown? boolean
 ---@field package defines table<string, Attribute.Define>
@@ -9,8 +10,7 @@ local API = {}
 ---@field package links table<string, string[]>
 ---@field package require table<string, string[]>
 ---@field package touched table<Attribute.Instance, table<string, number>>
----@field package dirtyMark table<Attribute.Instance, true>
----@field package dirtyList Attribute.Instance[]
+---@field package dirtySet table<Attribute.Instance, true>
 local System = {}
 ---@package
 System.__index = System
@@ -21,13 +21,13 @@ System.defaultBaseSymbol = '!'
 ---@package
 ---@return Attribute.System
 function System:init()
+    self.instID    = 0
     self.defines   = {}
     self.methods   = {}
     self.links     = {}
     self.require   = {}
     self.touched   = {}
-    self.dirtyMark = {}
-    self.dirtyList = {}
+    self.dirtySet  = {}
     return self
 end
 
@@ -132,21 +132,35 @@ function System:getTouched()
 end
 
 function System:updateEvent()
-    local list = self.dirtyList
-    local len = #list
-    if len == 0 then
+    local set = self.dirtySet
+    if not next(set) then
         return
     end
 
-    self.dirtyList = {}
-    self.dirtyMark = {}
+    self.dirtySet = {}
 
-    for i = 1, len do
+    ---@type Attribute.Instance[]
+    local list = {}
+    for inst in pairs(set) do
+        list[#list+1] = inst
+    end
+
+    table.sort(list, function (a, b)
+        return a.id < b.id
+    end)
+
+    for i = 1, #list do
         local instance = list[i]
         local events = instance.events
         if events then
+            if instance.needOrderEvents then
+                instance.needOrderEvents = false
+                table.sort(events, function (a, b)
+                    return a[1] < b[1]
+                end)
+            end
             for j = 1, #events do
-                events[j](instance)
+                events[j][2](instance)
             end
         end
     end
@@ -543,11 +557,10 @@ if not instance.attention[{name}] then
     return
 end
 local system = instance.system
-if system.dirtyMark[instance] then
+if system.dirtySet[instance] then
     return
 end
-system.dirtyMark[instance] = true
-system.dirtyList[#system.dirtyList+1] = instance
+system.dirtySet[instance] = true
 ]], { name = name })
 end
 
@@ -744,7 +757,8 @@ end
 ---@field package system Attribute.System
 ---@field package cache table<string, number>
 ---@field package methods table<string, Attribute.Method>
----@field package events? function[]
+---@field package events? [integer, function][]
+---@field package eventID integer
 ---@field package attention? table<string, integer>
 local Instance = {}
 ---@package
@@ -755,9 +769,11 @@ Instance.__index = Instance
 ---@param customData? any
 ---@return Attribute.Instance
 function Instance:init(system, customData)
-    self.system  = system
-    self.cache   = {}
-    self.methods = system.methods
+    system.instID = system.instID + 1
+    self.id         = system.instID
+    self.system     = system
+    self.cache      = {}
+    self.methods    = system.methods
     self.customData = customData
     return self
 end
@@ -833,6 +849,12 @@ function Instance:getMax(name)
     return method.getMax(self)
 end
 
+---@package
+Instance.eventID = 0
+
+---@package
+Instance.needOrderEvents = false
+
 ---@param name string
 ---@param callback Attribute.EventCallback
 ---@return function
@@ -842,6 +864,9 @@ function Instance:event(name, callback)
         events = {}
         self.events = events
     end
+
+    self.eventID = self.eventID + 1
+    local id = self.eventID
 
     local oldValue = self:get(name)
     local proxy = function ()
@@ -853,7 +878,7 @@ function Instance:event(name, callback)
         oldValue = newValue
     end
 
-    events[#events+1] = proxy
+    events[#events+1] = { id, proxy }
     local firstTry = #events
 
     local requires = self.system.require[name]
@@ -874,12 +899,12 @@ function Instance:event(name, callback)
         end
         disposed = true
 
-        if events[firstTry] == proxy then
+        if events[firstTry][2] == proxy then
             events[firstTry] = events[#events]
             events[#events] = nil
         else
             for i = 1, #events do
-                if events[i] == proxy then
+                if events[i][2] == proxy then
                     events[i] = events[#events]
                     events[#events] = nil
                     break
@@ -891,6 +916,7 @@ function Instance:event(name, callback)
             self.events = nil
             self.attention = nil
         else
+            self.needOrderEvents = true
             for _, attr in ipairs(requires) do
                 attention[attr] = attention[attr] - 1
                 if attention[attr] <= 0 then

@@ -276,6 +276,54 @@ do
     assert(instance:get('最大生命') == 0)
 end
 
+do
+    local system = attributeSystem.create()
+
+    system:define('属性1')
+    system:define('属性2')
+    system:define('属性3')
+
+    local instance1 = system:instance()
+    local instance2 = system:instance()
+
+    local list = {}
+
+    instance1:event('属性1', function (instance, newValue, oldValue)
+        list[#list+1] = { 1, '属性1'}
+    end)
+
+    instance1:event('属性2', function (instance, newValue, oldValue)
+        list[#list+1] = { 1, '属性2'}
+    end)
+
+    instance1:event('属性3', function (instance, newValue, oldValue)
+        list[#list+1] = { 1, '属性3'}
+    end)
+
+    instance2:event('属性1', function (instance, newValue, oldValue)
+        list[#list+1] = { 2, '属性1'}
+    end)
+
+    instance2:event('属性2', function (instance, newValue, oldValue)
+        list[#list+1] = { 2, '属性2'}
+    end)
+
+    instance2:event('属性3', function (instance, newValue, oldValue)
+        list[#list+1] = { 2, '属性3'}
+    end)
+
+    instance2:set('属性3', 100)
+    instance1:set('属性2', 100)
+    instance2:set('属性1', 100)
+
+    system:updateEvent()
+
+    assert(#list == 3)
+    assert(list[1][1] == 1 and list[1][2] == '属性2')
+    assert(list[2][1] == 2 and list[2][2] == '属性1')
+    assert(list[3][1] == 2 and list[3][2] == '属性3')
+end
+
 -------------- 性能测试 -------------
 
 do
