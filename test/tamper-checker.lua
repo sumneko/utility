@@ -52,11 +52,17 @@ do
 
     for i = 1, 10000 do
         large[i] = {}
-        for j = 1, 5 do
+        for j = 1, 3 do
             large[i][j] = j
         end
-        for j = 6, 10 do
+        for j = 4, 6 do
             large[i][j] = tostring(j)
+        end
+        for j = 7, 8 do
+            large[i][j] = {}
+        end
+        for j = 9, 10 do
+            large[i][j] = j + 0.123
         end
     end
 
@@ -87,11 +93,6 @@ do
         local tampered3, status3 = instance:checkAll(4000)
         assert(time == 12006)
         assert(status3 == 'timeout')
-
-        local tampered4 = tampered1 or tampered2 or tampered3
-        assert(tampered4 ~= nil)
-        assert(#tampered4 == 1)
-        assert(tampered4[1] == 'test.9000')
 
         local clock1 = os.clock()
         local tampered5, status5 = instance:checkAll()

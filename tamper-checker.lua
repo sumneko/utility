@@ -10,42 +10,124 @@ local clock = os.clock
 
 local weakK = { __mode = "k" }
 
----@param str string
+local MASK32 = 0xffffffff
+local FNV_OFFSET = 2166136261
+local FNV_PRIME = 16777619
+local ID_MIX = 0x9e3779b1
+local TYPE_TAG_STRING = 0x73
+local TYPE_TAG_NUMBER = 0x6e
+local TYPE_TAG_BOOLEAN = 0x62
+local TYPE_TAG_NIL = 0x30
+local TYPE_TAG_TABLE = 0x74
+local TYPE_TAG_FUNCTION = 0x66
+local TYPE_TAG_THREAD = 0x68
+local TYPE_TAG_USERDATA = 0x75
+
+local mathType = math.type
+local strPack = string.pack
+local strByte = string.byte
+
+local identityHashes = setmetatable({}, weakK)
+local nextIdentityId = 1
+
+---@param n integer
 ---@return integer
-local function hash(str)
-    local h = 0xcbf29ce484222325
-    local bytes = { string.byte(str, 1, -1) }
-    for i = 1, #bytes do
-        h = (h ~ bytes[i]) * 0x100000001b3
+local function u32(n)
+    return n & MASK32
+end
+
+---@param x integer
+---@param bits integer
+---@return integer
+local function rotl32(x, bits)
+    return u32((x << bits) | (x >> (32 - bits)))
+end
+
+---@param str string
+---@param seed? integer
+---@return integer
+local function hashString(str, seed)
+    local h = seed or FNV_OFFSET
+    for i = 1, #str do
+        h = u32((h ~ strByte(str, i)) * FNV_PRIME)
     end
     return h
 end
 
+---@param v table|function|thread|userdata
+---@param typeTag integer
+---@return integer
+local function hashIdentity(v, typeTag)
+    local id = identityHashes[v]
+    if not id then
+        id = nextIdentityId
+        nextIdentityId = nextIdentityId + 1
+        identityHashes[v] = id
+    end
+    return u32((id * ID_MIX) ~ typeTag)
+end
+
 ---@param v any
----@return string
-local function valueHash(v)
+---@return integer
+local function hashValue(v)
     local tp = type(v)
     if tp == 'string' then
-        return 'string:' .. hash(v)
-    elseif tp == 'boolean'
-    or tp == 'number'
-    or tp == 'nil' then
-        return ('%q'):format(v)
-    else
-        return ('%s:%p'):format(tp, v)
+        return hashString(v, FNV_OFFSET ~ TYPE_TAG_STRING)
+    elseif tp == 'number' then
+        local vType = mathType and mathType(v)
+        if vType == 'integer' then
+            return u32(v ~ (v >> 32))
+        end
+        if strPack then
+            return hashString(strPack("<d", v), FNV_OFFSET ~ TYPE_TAG_NUMBER)
+        end
+        return hashString(tostring(v), FNV_OFFSET ~ TYPE_TAG_NUMBER)
+    elseif tp == 'boolean' then
+        return (v and 0x34567891 or 0x12345678) ~ TYPE_TAG_BOOLEAN
+    elseif tp == 'nil' then
+        return TYPE_TAG_NIL
+    elseif tp == 'table' then
+        return hashIdentity(v, TYPE_TAG_TABLE)
+    elseif tp == 'function' then
+        return hashIdentity(v, TYPE_TAG_FUNCTION)
+    elseif tp == 'thread' then
+        return hashIdentity(v, TYPE_TAG_THREAD)
+    elseif tp == 'userdata' then
+        return hashIdentity(v, TYPE_TAG_USERDATA)
     end
+
+    return hashString(tostring(v), FNV_OFFSET)
+end
+
+---@param k any
+---@param v any
+---@return integer
+local function hashPair(k, v)
+    local kh = hashValue(k)
+    local vh = hashValue(v)
+    local mixed = u32(kh ~ rotl32(vh, 13))
+    return u32((mixed * 0x9e3779b1) ~ (mixed >> 16))
 end
 
 ---@param t table
 ---@return integer
 local function makeHash(t)
-    local buf = {}
-    for k, v in pairs(t) do
-        buf[#buf + 1] = valueHash(k) .. '=' .. valueHash(v)
+    -- 使用交换律聚合，避免排序和大字符串拼接带来的分配与 O(nlogn)
+    local xorAcc = 0
+    local sumAcc = 0
+    local count = 0
+
+    for k, v in next, t do
+        local pair = hashPair(k, v)
+        xorAcc = u32(xorAcc ~ pair)
+        sumAcc = u32(sumAcc + pair * 3 + 1)
+        count = count + 1
     end
-    table.sort(buf)
-    local concated = table.concat(buf, ",")
-    return hash(concated)
+
+    local h = u32(xorAcc ~ rotl32(sumAcc, 7) ~ u32(count * 0x85ebca6b))
+    h = u32((h ~ (h >> 16)) * 0x7feb352d)
+    h = u32((h ~ (h >> 15)) * 0x846ca68b)
+    return u32(h ~ (h >> 16))
 end
 
 ---@package
