@@ -20,6 +20,7 @@ dofile 'test/thex.lua'
 dofile 'test/smerger.lua'
 dofile 'test/pool.lua'
 dofile 'test/path-recoder.lua'
+dofile 'test/merge-files.lua'
 
 -- 这个太慢了，最后测试
 --dofile 'test/thex2.lua'
