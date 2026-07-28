@@ -22,14 +22,16 @@ package.searchers[#package.searchers+1] = function (name)
 end
 ]]
 
+    local count = 0
     for _, fileName in ipairs(list) do
         local content = contents[fileName]
         if content then
             buf[#buf+1] = string.format('files[%q] = %q', fileName:gsub('\\', '/'), content)
+            count = count + 1
         end
     end
 
-    return table.concat(buf, '\n')
+    return table.concat(buf, '\n'), count
 end
 
 local API = {}
