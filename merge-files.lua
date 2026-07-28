@@ -49,4 +49,8 @@ function API.byFileList(list, alias)
     return merge(list, contents)
 end
 
+function API.byFileContents(list, contents)
+    return merge(list, contents)
+end
+
 return API
