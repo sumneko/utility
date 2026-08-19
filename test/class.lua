@@ -597,6 +597,193 @@ do
     assert(r == nil)
 end
 
+--flush 只清理标记为 needFlush 的临时缓存
+do
+    ---@class J1: Class.Base
+    local J1 = class.declare 'J1'
+
+    local calls = 0
+    function J1.__getter:x()
+        calls = calls + 1
+        return calls, false, true
+    end
+
+    local t = class.new 'J1' ()
+    assert(t.x == 1)
+    assert(t.x == 1) -- 命中缓存
+    assert(calls == 1)
+
+    class.flush(t)
+    assert(t.x == 2) -- 缓存被清理后重新计算
+    assert(calls == 2)
+end
+
+--flush 不清理永久缓存（needCache=true）
+do
+    ---@class J2: Class.Base
+    local J2 = class.declare 'J2'
+
+    local calls = 0
+    function J2.__getter:x()
+        calls = calls + 1
+        return calls, true
+    end
+
+    local t = class.new 'J2' ()
+    assert(t.x == 1)
+    assert(t.x == 1)
+    class.flush(t)
+    assert(t.x == 1) -- 永久缓存不受影响
+    assert(calls == 1)
+end
+
+--flush 不影响纯访问器
+do
+    ---@class J3: Class.Base
+    local J3 = class.declare 'J3'
+
+    local calls = 0
+    function J3.__getter:x()
+        calls = calls + 1
+        return calls
+    end
+
+    local t = class.new 'J3' ()
+    assert(t.x == 1)
+    assert(t.x == 2) -- 每次重新计算
+    class.flush(t)
+    assert(t.x == 3)
+    assert(calls == 3)
+end
+
+--flush 不清理用户显式写入的值
+do
+    ---@class J4: Class.Base
+    local J4 = class.declare 'J4'
+
+    function J4.__getter:x()
+        return 100
+    end
+
+    local t = class.new 'J4' ()
+    t.x = 5
+    assert(t.x == 5)
+    class.flush(t)
+    assert(t.x == 5) -- 用户数据保留
+end
+
+--flush 清理压缩字段的临时缓存
+do
+    ---@class J5: Class.Base
+    local J5 = class.declare 'J5'
+    class.compressKeys('J5', { 'x' })
+
+    local calls = 0
+    function J5.__getter:x()
+        calls = calls + 1
+        return calls, false, true
+    end
+
+    local t = class.new 'J5' ()
+    assert(t.x == 1)
+    assert(t.x == 1)
+    class.flush(t)
+    assert(t.x == 2)
+end
+
+--flush 按实例动态决定（标记记录在对象身上）
+do
+    ---@class J6: Class.Base
+    local J6 = class.declare 'J6'
+
+    local n = 0
+    function J6.__getter:x()
+        n = n + 1
+        return n, false, self.needFlush -- 动态决定是否可 flush
+    end
+
+    local a = class.new 'J6' ()
+    local b = class.new 'J6' ()
+    a.needFlush = true
+    b.needFlush = false
+
+    -- a：needFlush=true → 缓存并标记
+    assert(a.x == 1)
+    assert(a.x == 1) -- 命中缓存
+    assert(n == 1)
+
+    -- b：needFlush=false → 不缓存不标记，每次重算
+    assert(b.x == 2)
+    assert(b.x == 3)
+    assert(n == 3)
+
+    -- 只清 a 的缓存，b 不受影响
+    class.flush(a)
+    assert(a.x == 4)
+    assert(n == 4)
+
+    class.flush(b) -- b 从未标记，无效果
+    assert(b.x == 5)
+    assert(n == 5)
+end
+
+--flush 超过 64 个键时使用多个位图（__flushKeys_0__ / __flushKeys_1__）
+do
+    ---@class J7: Class.Base
+    local J7 = class.declare 'J7'
+
+    local n = 0
+    for i = 1, 70 do
+        J7.__getter['k' .. i] = function ()
+            n = n + 1
+            return n, false, true
+        end
+    end
+
+    local t = class.new 'J7' ()
+    for i = 1, 70 do
+        assert(t['k' .. i] == i)
+    end
+    assert(n == 70)
+
+    -- 首次访问后全部命中缓存
+    for i = 1, 70 do
+        assert(t['k' .. i] == i)
+    end
+    assert(n == 70)
+
+    class.flush(t)
+    for i = 1, 70 do
+        assert(t['k' .. i] == 70 + i) -- 全部重新计算
+    end
+end
+
+--flush 缓存未命中（getter 缓存后手动赋 nil）
+do
+    ---@class J8: Class.Base
+    local J8 = class.declare 'J8'
+
+    local n = 0
+    function J8.__getter:x()
+        n = n + 1
+        return n, false, true
+    end
+
+    local t = class.new 'J8' ()
+    assert(t.x == 1) -- 首次计算并缓存
+    assert(t.x == 1) -- 命中缓存
+    assert(n == 1)
+
+    t.x = nil -- 手动清空字段 → 缓存未命中
+    assert(rawget(t, '__flushKeys_0__') == 1) -- 位图标记仍保留
+    assert(t.x == 2) -- getter 重新计算并再次缓存
+    assert(n == 2)
+
+    class.flush(t) -- 标记仍在，flush 正常清理
+    assert(t.x == 3) -- 再次重新计算
+    assert(n == 3)
+end
+
 print('功能测试通过')
 
 ---------------- 性能测试 ----------------
@@ -695,6 +882,51 @@ test('访问getter', function ()
     assert(t.x == 1)
     for _ = 1, count do
         local x = t.x
+    end
+end)
+
+test('访问getter（needFlush缓存命中）', function ()
+    ---@class G4: Class.Base
+    local g4 = class.declare 'G4'
+
+    function g4.__getter:x()
+        return 1, false, true
+    end
+
+    local t = class.new 'G4' ()
+    assert(t.x == 1) -- 首次访问：计算并标记
+    for _ = 1, count do
+        local x = t.x -- 命中缓存
+    end
+end)
+
+test('getter（needFlush）+ flush 循环', function ()
+    ---@class G5: Class.Base
+    local g5 = class.declare 'G5'
+
+    function g5.__getter:x()
+        return 1, false, true
+    end
+
+    local t = class.new 'G5' ()
+    for _ = 1, count do
+        local x = t.x
+        class.flush(t)
+    end
+end)
+
+test('getter（needFlush）缓存未命中（赋nil）', function ()
+    ---@class G6: Class.Base
+    local g6 = class.declare 'G6'
+
+    function g6.__getter:x()
+        return 1, false, true
+    end
+
+    local t = class.new 'G6' ()
+    for _ = 1, count do
+        local x = t.x
+        t.x = nil -- 缓存未命中：下次访问重新计算
     end
 end)
 

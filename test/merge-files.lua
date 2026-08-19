@@ -2,7 +2,9 @@ local mf = require 'merge-files'
 
 do
     local value = math.random(1, 10000)
-    io.open('temp.lua', 'wb'):write('return ' .. value)
+    local f = assert(io.open('temp.lua', 'wb'))
+    f:write('return ' .. value)
+    f:close()
 
     local list = {}
     for name in io.popen('dir /b *.lua'):read('*a'):gmatch('[^\r\n]+') do
