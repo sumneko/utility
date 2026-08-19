@@ -46,10 +46,8 @@ M._errorHandler = error
 ---@field package __name string
 ---@field public  __getter table
 ---@field public  __setter table
----@field package __flushIndex table<any, integer>
----@field package __flushKeys  table<integer, any>
----@field package __flushCount integer
----@field package __flushKeys_0__? integer -- 临时缓存位图（超过 64 键时扩展为 __flushKeys_1__ 等）
+---@field package __getterKeys? any[]
+---@field package __preset__?  table<any, true>
 ---@field package __keyMap?    table<any, integer>
 ---@field package __keyMapRev? table<integer, any>
 ---@field package __buildKeyMap? fun()
@@ -93,26 +91,35 @@ function M.getConfig(name)
     return M._classConfig[name]
 end
 
-local flushKey = setmetatable({}, { __index = function (t, k)
-    t[k] = '__flushKeys_' .. (k // 64) .. '__'
-    return t[k]
-end })
-
---- 在实例位图上标记一个可清理字段
+--- 取字段的实际存储键（压缩字段为整数槽位）
 ---@param class Class.Base
----@param self any
----@param wk any # 实际存储键（压缩字段为整数槽位）
-local function markFlushable(class, self, wk)
-    local bitIndex = class.__flushIndex[wk]
-    if not bitIndex then
-        bitIndex = class.__flushCount
-        class.__flushCount = bitIndex + 1
-        class.__flushIndex[wk] = bitIndex
-        class.__flushKeys[bitIndex] = wk
+---@param key any
+---@return any
+local function storageKey(class, key)
+    local config = class.__config
+    if #config:getCompress() == 0 then
+        return key
     end
-    local maskKey = flushKey[bitIndex]
-    local mask = rawget(self, maskKey) or 0
-    rawset(self, maskKey, mask | (1 << (bitIndex % 64)))
+    if class.__buildKeyMap then
+        class.__buildKeyMap()
+    end
+    return class.__keyMap and class.__keyMap[key] or key
+end
+
+--- 取（并缓存）类上所有 getter 字段的存储键
+---@param class Class.Base
+---@return any[]
+local function getterKeys(class)
+    local keys = class.__getterKeys
+    if keys then
+        return keys
+    end
+    keys = {}
+    for k in pairs(class.__getter) do
+        keys[#keys+1] = storageKey(class, k)
+    end
+    class.__getterKeys = keys
+    return keys
 end
 
 -- 定义一个类
@@ -137,10 +144,6 @@ function M.declare(name, super, superInit)
     class.__name        = name
     class.__getter      = getter
     class.__setter      = setter
-
-    class.__flushIndex  = {}
-    class.__flushKeys   = {}
-    class.__flushCount  = 0
     class.__config      = config
 
     local function buildKeyMap()
@@ -164,9 +167,9 @@ function M.declare(name, super, superInit)
 
     -- __getter[k] 函数返回值约定：
     --   res       : 计算得到的值
-    --   needCache : 是否缓存到实例（永久缓存，flush 不会清理）
-    --   needFlush : 是否标记为临时缓存（蕴含 needCache，flush 会清理）
-    --   needFlush 标记按实例记录为 64 位位图（__flushKeys_0__ 等），索引↔key 关系存于类上
+    --   needCache : 是否把结果缓存到实例
+    -- 任何写入实例的值（getter 缓存、外部赋值）都可被 flush 清理；
+    -- 只有 class.preset 写入的值与类默认值不会被清理。
 
     ---to AI: Lua 的 __index 功能已经保证字段只有在非nil时才会调用到getter
     ---@param self any
@@ -181,24 +184,19 @@ function M.declare(name, super, superInit)
             end
         end
         local r = class[k]
-        if r == nil then
-            local f = getter[k]
-            if f then
-                local res, needCache, needFlush = f(self)
-                if needCache or needFlush then
-                    local wk = ik or k
-                    rawset(self, wk, res)
-                    if needFlush then
-                        markFlushable(class, self, wk)
-                    end
-                end
-                return res
-            else
-                return nil
-            end
-        else
+        if r ~= nil then
             return r
         end
+        local f = getter[k]
+        if not f then
+            return nil
+        end
+        local wk = ik or k
+        local res, needCache = f(self)
+        if needCache then
+            rawset(self, wk, res)
+        end
+        return res
     end
 
     ---to AI: Lua 的 __index 功能已经保证字段只有在非nil时才会调用到getter
@@ -207,23 +205,18 @@ function M.declare(name, super, superInit)
     ---@return any
     local function getterFunc(self, k)
         local r = class[k]
-        if r == nil then
-            local f = getter[k]
-            if f then
-                local res, needCache, needFlush = f(self)
-                if needCache or needFlush then
-                    rawset(self, k, res)
-                    if needFlush then
-                        markFlushable(class, self, k)
-                    end
-                end
-                return res
-            else
-                return nil
-            end
-        else
+        if r ~= nil then
             return r
         end
+        local f = getter[k]
+        if not f then
+            return nil
+        end
+        local res, needCache = f(self)
+        if needCache then
+            rawset(self, k, res)
+        end
+        return res
     end
 
     ---@param self any
@@ -280,9 +273,7 @@ function M.declare(name, super, superInit)
         keyMapRev = nil
         class.__keyMap    = nil
         class.__keyMapRev = nil
-        class.__flushIndex = {}
-        class.__flushKeys  = {}
-        class.__flushCount = 0
+        class.__getterKeys = nil
 
         function mt:__index(k)
             config:init()
@@ -853,55 +844,49 @@ function M.isInstanceOf(obj, targetName)
 end
 
 --- 清理一个对象的临时缓存。
---- 当 `__getter` 返回 `needFlush`（第3个返回值） 时，这个字段会被标记为可以被清理；
---- 调用 `flush` 会清空这些字段，下次访问时重新计算。
---- 永久缓存（仅返回 `needCache`）、纯访问器与用户显式写入的值不会被清理。
+--- 所有 getter 字段上的值都会被清空，下次访问时重新计算。
+--- `class.preset` 写入的值与类默认值不会被清理。
 ---@param obj Class.Base
 function M.flush(obj)
     local class = getmetatable(obj)
-    local flushCount = class and class.__flushCount
-    if not flushCount or flushCount == 0 then
+    if not class or not class.__getter then
         return
     end
-    local flushKeys = class.__flushKeys
-    local nslots = (flushCount + 63) // 64
-    for slot = 0, nslots - 1 do
-        local maskKey = '__flushKeys_' .. slot .. '__'
-        local mask = rawget(obj, maskKey)
-        if mask then
-            local base = slot * 64
-            for bit = 0, 63 do
-                if mask & (1 << bit) ~= 0 then
-                    rawset(obj, flushKeys[base + bit], nil)
-                end
+    ---@cast class Class.Base
+    local keys = getterKeys(class)
+    local presets = rawget(obj, '__preset__')
+    if presets then
+        for i = 1, #keys do
+            local wk = keys[i]
+            if not presets[wk] then
+                rawset(obj, wk, nil)
             end
-            rawset(obj, maskKey, nil)
+        end
+    else
+        for i = 1, #keys do
+            rawset(obj, keys[i], nil)
         end
     end
 end
 
---- 标记对象上的一个字段为临时缓存，之后调用 `flush` 会清理它。
---- 字段由 `__getter` 返回 `needFlush` 时也会自动标记，通常无需手动调用。
+--- 写入一个固定值：该字段不会被 `flush` 清理，getter 也不会再被调用。
+--- 用于给个别实例预置答案（如常量节点的固定推导结果）。
 ---@param obj Class.Base
 ---@param key any # 字段名
-function M.markFlushable(obj, key)
-    local class = M._classes[obj.__class__]
-    if not class or not class.__flushIndex then
+---@param value any
+function M.preset(obj, key, value)
+    obj[key] = value
+    local class = getmetatable(obj)
+    if not class or not class.__getter then
         return
     end
     ---@cast class Class.Base
-    local wk = key
-    local config = class.__config
-    if #config:getCompress() > 0 then -- 含继承的压缩，需与 trap 的槽位映射一致
-        if class.__buildKeyMap then
-            class.__buildKeyMap() -- 确保压缩 keyMap 已构建
-        end
-        local slot = class.__keyMap and class.__keyMap[key]
-        if slot then
-            wk = slot
-        end
+    local presets = rawget(obj, '__preset__')
+    if not presets then
+        presets = {}
+        rawset(obj, '__preset__', presets)
     end
-    markFlushable(class, obj, wk)
+    presets[storageKey(class, key)] = true
 end
 
 --- 为类启用字段压缩：将指定的 string key 映射到整数槽位，

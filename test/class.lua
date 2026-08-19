@@ -597,15 +597,15 @@ do
     assert(r == nil)
 end
 
---flush 只清理标记为 needFlush 的临时缓存
-do
+--flush 清理 getter 写回的缓存
+ do
     ---@class J1: Class.Base
     local J1 = class.declare 'J1'
 
     local calls = 0
     function J1.__getter:x()
         calls = calls + 1
-        return calls, false, true
+        return calls, true
     end
 
     local t = class.new 'J1' ()
@@ -616,25 +616,6 @@ do
     class.flush(t)
     assert(t.x == 2) -- 缓存被清理后重新计算
     assert(calls == 2)
-end
-
---flush 不清理永久缓存（needCache=true）
-do
-    ---@class J2: Class.Base
-    local J2 = class.declare 'J2'
-
-    local calls = 0
-    function J2.__getter:x()
-        calls = calls + 1
-        return calls, true
-    end
-
-    local t = class.new 'J2' ()
-    assert(t.x == 1)
-    assert(t.x == 1)
-    class.flush(t)
-    assert(t.x == 1) -- 永久缓存不受影响
-    assert(calls == 1)
 end
 
 --flush 不影响纯访问器
@@ -656,7 +637,7 @@ do
     assert(calls == 3)
 end
 
---flush 不清理用户显式写入的值
+--flush 清理 getter 字段上的值（外部赋值也可清，preset 除外）
 do
     ---@class J4: Class.Base
     local J4 = class.declare 'J4'
@@ -666,13 +647,13 @@ do
     end
 
     local t = class.new 'J4' ()
-    t.x = 5
+    t.x = 5 -- 外部显式赋值
     assert(t.x == 5)
     class.flush(t)
-    assert(t.x == 5) -- 用户数据保留
+    assert(t.x == 100) -- 被清理后重新走 getter
 end
 
---flush 清理压缩字段的临时缓存
+--flush 清理压缩字段的缓存
 do
     ---@class J5: Class.Base
     local J5 = class.declare 'J5'
@@ -681,7 +662,7 @@ do
     local calls = 0
     function J5.__getter:x()
         calls = calls + 1
-        return calls, false, true
+        return calls, true
     end
 
     local t = class.new 'J5' ()
@@ -691,7 +672,7 @@ do
     assert(t.x == 2)
 end
 
---flush 按实例动态决定（标记记录在对象身上）
+--class.preset 固定值（永久）与 getter 缓存（可清）的生命周期分离
 do
     ---@class J6: Class.Base
     local J6 = class.declare 'J6'
@@ -699,35 +680,23 @@ do
     local n = 0
     function J6.__getter:x()
         n = n + 1
-        return n, false, self.needFlush -- 动态决定是否可 flush
+        return n, true
     end
 
     local a = class.new 'J6' ()
     local b = class.new 'J6' ()
-    a.needFlush = true
-    b.needFlush = false
+    class.preset(a, 'x', 100) -- 固定值：永久
+    assert(a.x == 100)
+    assert(b.x == 1) -- getter 缓存，可清
 
-    -- a：needFlush=true → 缓存并标记
-    assert(a.x == 1)
-    assert(a.x == 1) -- 命中缓存
-    assert(n == 1)
-
-    -- b：needFlush=false → 不缓存不标记，每次重算
-    assert(b.x == 2)
-    assert(b.x == 3)
-    assert(n == 3)
-
-    -- 只清 a 的缓存，b 不受影响
     class.flush(a)
-    assert(a.x == 4)
-    assert(n == 4)
+    assert(a.x == 100) -- preset 不被清
 
-    class.flush(b) -- b 从未标记，无效果
-    assert(b.x == 5)
-    assert(n == 5)
+    class.flush(b)
+    assert(b.x == 2) -- getter 缓存被清，重新计算
 end
 
---flush 超过 64 个键时使用多个位图（__flushKeys_0__ / __flushKeys_1__）
+--flush 遍历所有 getter 字段（大量键）
 do
     ---@class J7: Class.Base
     local J7 = class.declare 'J7'
@@ -736,7 +705,7 @@ do
     for i = 1, 70 do
         J7.__getter['k' .. i] = function ()
             n = n + 1
-            return n, false, true
+            return n, true
         end
     end
 
@@ -766,7 +735,7 @@ do
     local n = 0
     function J8.__getter:x()
         n = n + 1
-        return n, false, true
+        return n, true
     end
 
     local t = class.new 'J8' ()
@@ -775,7 +744,6 @@ do
     assert(n == 1)
 
     t.x = nil -- 手动清空字段 → 缓存未命中
-    assert(rawget(t, '__flushKeys_0__') == 1) -- 位图标记仍保留
     assert(t.x == 2) -- getter 重新计算并再次缓存
     assert(n == 2)
 
@@ -784,39 +752,48 @@ do
     assert(n == 3)
 end
 
---class.markFlushable 手动标记临时缓存
+--class.preset 固定值：不被 flush 清理，getter 不再被调用
 do
     ---@class J9: Class.Base
     local J9 = class.declare 'J9'
 
+    local calls = 0
+    function J9.__getter:x()
+        calls = calls + 1
+        return calls, true
+    end
+
     local t = class.new 'J9' ()
     assert(rawget(t, '__class__') == 'J9') -- __class__ 是类名字符串
-    t.x = 1 -- 普通字段
-    class.markFlushable(t, 'x')
-    assert(t.x == 1)
+    class.preset(t, 'x', 100)
+    assert(t.x == 100)
+    assert(calls == 0) -- getter 不再被调用
     class.flush(t)
-    assert(t.x == nil) -- 被清理
-
-    local plainTable = {}
-    ---@cast plainTable Class.Base
-    class.markFlushable(plainTable, 'x') -- 非类对象，安全无操作
+    assert(t.x == 100) -- preset 不被清
+    assert(calls == 0)
 end
 
---class.markFlushable 压缩字段（自动换算整数槽位）
+--class.preset 压缩字段（自动换算整数槽位）
 do
     ---@class J10: Class.Base
     local J10 = class.declare 'J10'
     class.compressKeys('J10', { 'x' })
 
+    local calls = 0
+    function J10.__getter:x()
+        calls = calls + 1
+        return calls, true
+    end
+
     local t = class.new 'J10' ()
-    t.x = 1 -- 写入压缩槽位
-    class.markFlushable(t, 'x')
-    assert(t.x == 1)
+    class.preset(t, 'x', 100)
+    assert(t.x == 100)
     class.flush(t)
-    assert(t.x == nil) -- 槽位被清理
+    assert(t.x == 100) -- preset 不被清
+    assert(calls == 0)
 end
 
---class.markFlushable 继承的压缩字段（合并 compress）
+--class.preset 继承的压缩字段（合并 compress）
 do
     ---@class J11P: Class.Base
     local J11P = class.declare 'J11P'
@@ -826,12 +803,91 @@ do
     local J11 = class.declare 'J11'
     class.extends('J11', 'J11P')
 
+    local calls = 0
+    function J11.__getter:x()
+        calls = calls + 1
+        return calls, true
+    end
+
     local t = class.new 'J11' ()
-    t.x = 1 -- 写入继承的压缩槽位
-    class.markFlushable(t, 'x')
-    assert(t.x == 1)
+    class.preset(t, 'x', 100)
+    assert(t.x == 100)
     class.flush(t)
-    assert(t.x == nil) -- 槽位被清理
+    assert(t.x == 100) -- preset 不被清
+    assert(calls == 0)
+end
+
+--哨兵：getter 体内写自身字段，计算中 flush 后不残留哨兵
+do
+    ---@class J12: Class.Base
+    local J12 = class.declare 'J12'
+
+    local count = 0
+    function J12.__getter:x()
+        self.x = 'sentinel' -- 哨兵
+        if self.triggerFlush then
+            self.triggerFlush = nil
+            class.flush(self) -- 计算中触发 flush
+        end
+        count = count + 1
+        return 'real' .. count
+    end
+
+    local t = class.new 'J12' ()
+    t.triggerFlush = true
+    assert(t.x == 'real1')
+    -- 若哨兵残留，此处会读到 'sentinel'
+    assert(t.x == 'real2') -- 重新进入 getter
+    assert(count == 2)
+end
+
+--不缓存的 getter 不写字段、不产生 __preset__ 残留
+do
+    ---@class J13: Class.Base
+    local J13 = class.declare 'J13'
+
+    function J13.__getter:x()
+        return 1 -- 不缓存，也不写字段
+    end
+
+    local t = class.new 'J13' ()
+    assert(t.x == 1)
+    assert(t.x == 1)
+    assert(rawget(t, '__preset__') == nil) -- 无 preset 残留
+    class.flush(t) -- 无害
+    assert(t.x == 1)
+end
+
+--reload（compress 变化）后 getterKeys 按新布局重建；新实例正常缓存与清理
+do
+    ---@class J14: Class.Base
+    local J14 = class.declare 'J14'
+
+    local n = 0
+    function J14.__getter:x()
+        n = n + 1
+        return n, true
+    end
+
+    local t = class.new 'J14' ()
+    assert(t.x == 1)
+    assert(t.x == 1)
+
+    -- 重载 + 压缩布局变化（模拟 reload）
+    class.compressKeys('J14', { 'x' })
+    class.declare 'J14'
+
+    -- 旧实例在非压缩期写入的字符串键缓存会残留并遮蔽新 getter（孤儿字段）；
+    -- flush 只按新布局（整数槽位）清理，不清旧字符串键 → t.x 仍读到旧缓存 1
+    class.flush(t)
+    assert(t.x == 1)
+    assert(n == 1)
+
+    -- 新实例按新布局正常缓存与清理
+    local t2 = class.new 'J14' ()
+    assert(t2.x == 2)
+    class.flush(t2)
+    assert(t2.x == 3)
 end
 
 print('功能测试通过')
@@ -935,12 +991,12 @@ test('访问getter', function ()
     end
 end)
 
-test('访问getter（needFlush缓存命中）', function ()
+test('访问getter（缓存命中）', function ()
     ---@class G4: Class.Base
     local g4 = class.declare 'G4'
 
     function g4.__getter:x()
-        return 1, false, true
+        return 1, true
     end
 
     local t = class.new 'G4' ()
@@ -950,12 +1006,12 @@ test('访问getter（needFlush缓存命中）', function ()
     end
 end)
 
-test('getter（needFlush）+ flush 循环', function ()
+test('getter + flush 循环', function ()
     ---@class G5: Class.Base
     local g5 = class.declare 'G5'
 
     function g5.__getter:x()
-        return 1, false, true
+        return 1, true
     end
 
     local t = class.new 'G5' ()
@@ -965,12 +1021,12 @@ test('getter（needFlush）+ flush 循环', function ()
     end
 end)
 
-test('getter（needFlush）缓存未命中（赋nil）', function ()
+test('getter 缓存未命中（赋nil）', function ()
     ---@class G6: Class.Base
     local g6 = class.declare 'G6'
 
     function g6.__getter:x()
-        return 1, false, true
+        return 1, true
     end
 
     local t = class.new 'G6' ()
