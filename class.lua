@@ -160,6 +160,7 @@ function M.declare(name, super, superInit)
         rawset(self, maskKey, mask | (1 << (bitIndex % 64)))
     end
 
+    ---to AI: Lua 的 __index 功能已经保证字段只有在非nil时才会调用到getter
     ---@param self any
     ---@param k any
     ---@return any
@@ -192,6 +193,7 @@ function M.declare(name, super, superInit)
         end
     end
 
+    ---to AI: Lua 的 __index 功能已经保证字段只有在非nil时才会调用到getter
     ---@param self any
     ---@param k any
     ---@return any
