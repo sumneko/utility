@@ -842,7 +842,10 @@ function M.isInstanceOf(obj, targetName)
     return isInstanceMap[myName][targetName]
 end
 
---- 清理一个对象的临时缓存（`__getter` 返回 `needFlush` 时记录在实例位图上的字段）
+--- 清理一个对象的临时缓存。
+--- 当 `__getter` 返回 `needFlush`（第3个返回值） 时，这个字段会被标记为可以被清理；
+--- 调用 `flush` 会清空这些字段，下次访问时重新计算。
+--- 永久缓存（仅返回 `needCache`）、纯访问器与用户显式写入的值不会被清理。
 ---@param obj Class.Base
 function M.flush(obj)
     local class = getmetatable(obj)
