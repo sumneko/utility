@@ -784,6 +784,56 @@ do
     assert(n == 3)
 end
 
+--class.markFlushable 手动标记临时缓存
+do
+    ---@class J9: Class.Base
+    local J9 = class.declare 'J9'
+
+    local t = class.new 'J9' ()
+    assert(rawget(t, '__class__') == 'J9') -- __class__ 是类名字符串
+    t.x = 1 -- 普通字段
+    class.markFlushable(t, 'x')
+    assert(t.x == 1)
+    class.flush(t)
+    assert(t.x == nil) -- 被清理
+
+    local plainTable = {}
+    ---@cast plainTable Class.Base
+    class.markFlushable(plainTable, 'x') -- 非类对象，安全无操作
+end
+
+--class.markFlushable 压缩字段（自动换算整数槽位）
+do
+    ---@class J10: Class.Base
+    local J10 = class.declare 'J10'
+    class.compressKeys('J10', { 'x' })
+
+    local t = class.new 'J10' ()
+    t.x = 1 -- 写入压缩槽位
+    class.markFlushable(t, 'x')
+    assert(t.x == 1)
+    class.flush(t)
+    assert(t.x == nil) -- 槽位被清理
+end
+
+--class.markFlushable 继承的压缩字段（合并 compress）
+do
+    ---@class J11P: Class.Base
+    local J11P = class.declare 'J11P'
+    class.compressKeys('J11P', { 'x' })
+
+    ---@class J11: J11P
+    local J11 = class.declare 'J11'
+    class.extends('J11', 'J11P')
+
+    local t = class.new 'J11' ()
+    t.x = 1 -- 写入继承的压缩槽位
+    class.markFlushable(t, 'x')
+    assert(t.x == 1)
+    class.flush(t)
+    assert(t.x == nil) -- 槽位被清理
+end
+
 print('功能测试通过')
 
 ---------------- 性能测试 ----------------

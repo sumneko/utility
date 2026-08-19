@@ -50,8 +50,12 @@ M._errorHandler = error
 ---@field package __flushKeys  table<integer, any>
 ---@field package __flushCount integer
 ---@field package __flushKeys_0__? integer -- 临时缓存位图（超过 64 键时扩展为 __flushKeys_1__ 等）
+---@field package __keyMap?    table<any, integer>
+---@field package __keyMapRev? table<integer, any>
+---@field package __buildKeyMap? fun()
 ---@field public  __super  Class.Base
 ---@field package __config Class.Config
+---@field package __class__? string
 
 ---@class Class.Config
 ---@field package name         string
@@ -93,6 +97,23 @@ local flushKey = setmetatable({}, { __index = function (t, k)
     t[k] = '__flushKeys_' .. (k // 64) .. '__'
     return t[k]
 end })
+
+--- 在实例位图上标记一个可清理字段
+---@param class Class.Base
+---@param self any
+---@param wk any # 实际存储键（压缩字段为整数槽位）
+local function markFlushable(class, self, wk)
+    local bitIndex = class.__flushIndex[wk]
+    if not bitIndex then
+        bitIndex = class.__flushCount
+        class.__flushCount = bitIndex + 1
+        class.__flushIndex[wk] = bitIndex
+        class.__flushKeys[bitIndex] = wk
+    end
+    local maskKey = flushKey[bitIndex]
+    local mask = rawget(self, maskKey) or 0
+    rawset(self, maskKey, mask | (1 << (bitIndex % 64)))
+end
 
 -- 定义一个类
 ---@generic T: string
@@ -136,29 +157,16 @@ function M.declare(name, super, superInit)
             t[k] = false
             return false
         end })
+        class.__keyMap    = keyMap
+        class.__keyMapRev = keyMapRev
     end
+    class.__buildKeyMap = buildKeyMap
 
     -- __getter[k] 函数返回值约定：
     --   res       : 计算得到的值
     --   needCache : 是否缓存到实例（永久缓存，flush 不会清理）
     --   needFlush : 是否标记为临时缓存（蕴含 needCache，flush 会清理）
     --   needFlush 标记按实例记录为 64 位位图（__flushKeys_0__ 等），索引↔key 关系存于类上
-
-    --- 记录一个 needFlush 字段到实例的位图
-    ---@param self any
-    ---@param wk any
-    local function markFlushable(self, wk)
-        local bitIndex = class.__flushIndex[wk]
-        if not bitIndex then
-            bitIndex = class.__flushCount
-            class.__flushCount = bitIndex + 1
-            class.__flushIndex[wk] = bitIndex
-            class.__flushKeys[bitIndex] = wk
-        end
-        local maskKey = flushKey[bitIndex]
-        local mask = rawget(self, maskKey) or 0
-        rawset(self, maskKey, mask | (1 << (bitIndex % 64)))
-    end
 
     ---to AI: Lua 的 __index 功能已经保证字段只有在非nil时才会调用到getter
     ---@param self any
@@ -181,7 +189,7 @@ function M.declare(name, super, superInit)
                     local wk = ik or k
                     rawset(self, wk, res)
                     if needFlush then
-                        markFlushable(self, wk)
+                        markFlushable(class, self, wk)
                     end
                 end
                 return res
@@ -206,7 +214,7 @@ function M.declare(name, super, superInit)
                 if needCache or needFlush then
                     rawset(self, k, res)
                     if needFlush then
-                        markFlushable(self, k)
+                        markFlushable(class, self, k)
                     end
                 end
                 return res
@@ -270,6 +278,8 @@ function M.declare(name, super, superInit)
     config.resetTrap = function ()
         keyMap = nil
         keyMapRev = nil
+        class.__keyMap    = nil
+        class.__keyMapRev = nil
         class.__flushIndex = {}
         class.__flushKeys  = {}
         class.__flushCount = 0
@@ -868,6 +878,30 @@ function M.flush(obj)
             rawset(obj, maskKey, nil)
         end
     end
+end
+
+--- 标记对象上的一个字段为临时缓存，之后调用 `flush` 会清理它。
+--- 字段由 `__getter` 返回 `needFlush` 时也会自动标记，通常无需手动调用。
+---@param obj Class.Base
+---@param key any # 字段名
+function M.markFlushable(obj, key)
+    local class = M._classes[obj.__class__]
+    if not class or not class.__flushIndex then
+        return
+    end
+    ---@cast class Class.Base
+    local wk = key
+    local config = class.__config
+    if #config:getCompress() > 0 then -- 含继承的压缩，需与 trap 的槽位映射一致
+        if class.__buildKeyMap then
+            class.__buildKeyMap() -- 确保压缩 keyMap 已构建
+        end
+        local slot = class.__keyMap and class.__keyMap[key]
+        if slot then
+            wk = slot
+        end
+    end
+    markFlushable(class, obj, wk)
 end
 
 --- 为类启用字段压缩：将指定的 string key 映射到整数槽位，
