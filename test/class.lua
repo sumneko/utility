@@ -890,6 +890,200 @@ do
     assert(t2.x == 3)
 end
 
+--「reset 后第一次写入」必须和读取一样延迟初始化：
+-- __newindex 里缺少 config:init() 时，继承来的 setter 尚未复制回子类，
+-- 写入会被当成普通字段 rawset，甚至把整个类的 __newindex 置 nil 永久失效。
+-- 1) 子类只有继承 setter；reset 父类后第一次操作是直接写
+do
+    ---@class RST_A: Class.Base
+    local RST_A = class.declare 'RST_A'
+
+    function RST_A.__getter:value()
+        return self._value
+    end
+
+    function RST_A.__setter:value(v)
+        self._value = v
+    end
+
+    ---@class RST_A_C: RST_A
+    class.declare 'RST_A_C'
+    class.extends('RST_A_C', 'RST_A')
+
+    local childClass = class.get 'RST_A_C'
+
+    local a = class.new 'RST_A_C' ()
+    local b = class.new 'RST_A_C' ()
+
+    a.value = true
+    b.value = true
+    assert(a._value == true)
+    assert(b._value == true)
+
+    -- 重复声明已有父类 → reset 传播到子类
+    class.declare 'RST_A'
+
+    -- reset 后第一次触碰子类是直接写
+    a.value = false
+    assert(a._value == false)
+    assert(rawget(a, 'value') == nil)
+
+    -- 类级影响：同类第二个实例
+    b.value = false
+    assert(b._value == false)
+    assert(rawget(b, 'value') == nil)
+
+    -- 第一次失败写入之后新建的实例
+    local c = class.new 'RST_A_C' ()
+    c.value = true
+    assert(c._value == true)
+    assert(rawget(c, 'value') == nil)
+
+    -- 写陷阱没有被永久关闭
+    assert(childClass.__newindex ~= nil)
+
+    -- 直接 reset 子类本身，第一次操作依然是写
+    class.declare 'RST_A_C'
+    c.value = false
+    assert(c._value == false)
+    assert(rawget(c, 'value') == nil)
+end
+
+-- 2) reset 中间类（链条 P <- M <- C）
+do
+    ---@class RST_B_P: Class.Base
+    local RST_B_P = class.declare 'RST_B_P'
+
+    function RST_B_P.__setter:value(v)
+        self._value = v
+    end
+
+    ---@class RST_B_M: RST_B_P
+    class.declare 'RST_B_M'
+    class.extends('RST_B_M', 'RST_B_P')
+
+    ---@class RST_B_C: RST_B_M
+    class.declare 'RST_B_C'
+    class.extends('RST_B_C', 'RST_B_M')
+
+    local leaf = class.new 'RST_B_C' ()
+    leaf.value = 1
+    assert(leaf._value == 1)
+
+    -- reset 中间类，影响传播到叶子类
+    class.declare 'RST_B_M'
+
+    leaf.value = 2
+    assert(leaf._value == 2)
+    assert(rawget(leaf, 'value') == nil)
+end
+
+-- 3) 子类同时具有自有 setter 和继承 setter
+do
+    ---@class RST_C_P: Class.Base
+    local RST_C_P = class.declare 'RST_C_P'
+
+    function RST_C_P.__setter:px(v)
+        self._px = v
+    end
+
+    ---@class RST_C_C: RST_C_P
+    local RST_C_C = class.declare 'RST_C_C'
+    class.extends('RST_C_C', 'RST_C_P')
+
+    function RST_C_C.__setter:cx(v)
+        self._cx = v
+    end
+
+    local t = class.new 'RST_C_C' ()
+    t.px = 1
+    t.cx = 2
+    assert(t._px == 1)
+    assert(t._cx == 2)
+
+    -- reset 父类：自有 setter 不受影响，继承的 setter 必须重新复制回来
+    class.declare 'RST_C_P'
+
+    t.px = 3
+    assert(t._px == 3)
+    assert(rawget(t, 'px') == nil)
+
+    t.cx = 4
+    assert(t._cx == 4)
+    assert(rawget(t, 'cx') == nil)
+end
+
+-- 4) 普通字段模式（无 setter、无 compress）在 reset 后依然正常
+do
+    class.declare 'RST_D_P'
+    class.declare 'RST_D_C'
+    class.extends('RST_D_C', 'RST_D_P')
+
+    local t = class.new 'RST_D_C' ()
+    t.x = 1
+    assert(rawget(t, 'x') == 1)
+
+    class.declare 'RST_D_P' -- reset
+
+    t.y = 2
+    assert(rawget(t, 'y') == 2)
+    assert(class.get('RST_D_C').__newindex == nil)
+end
+
+-- 5) compressKeys 压缩字段模式
+do
+    ---@class RST_E_P: Class.Base
+    local RST_E_P = class.declare 'RST_E_P'
+    class.compressKeys('RST_E_P', { 'value' })
+
+    function RST_E_P.__getter:value()
+        return self._value
+    end
+
+    function RST_E_P.__setter:value(v)
+        self._value = v
+    end
+
+    ---@class RST_E_C: RST_E_P
+    class.declare 'RST_E_C'
+    class.extends('RST_E_C', 'RST_E_P')
+
+    local t = class.new 'RST_E_C' ()
+    t.value = 1
+    assert(t._value == 1)
+
+    -- reset 父类，压缩列表通过 getCompress 合并到子类
+    class.compressKeys('RST_E_P', { 'value' })
+
+    t.value = 2
+    assert(t._value == 2)
+    assert(t.value == 2)
+    assert(rawget(t, 1) == nil) -- 压缩槽位没有被直接写入
+end
+
+-- 6) 连续多次 reset 后重复写入
+do
+    ---@class RST_F_P: Class.Base
+    local RST_F_P = class.declare 'RST_F_P'
+
+    function RST_F_P.__setter:value(v)
+        self._value = v
+    end
+
+    ---@class RST_F_C: RST_F_P
+    class.declare 'RST_F_C'
+    class.extends('RST_F_C', 'RST_F_P')
+
+    local t = class.new 'RST_F_C' ()
+
+    for i = 1, 5 do
+        class.declare 'RST_F_P' -- 每次 reset 后的第一次操作都是写
+        t.value = i
+        assert(t._value == i)
+        assert(rawget(t, 'value') == nil)
+    end
+end
+
 print('功能测试通过')
 
 ---------------- 性能测试 ----------------
