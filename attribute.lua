@@ -710,6 +710,7 @@ local methods = instance.methods
 return {getMin:s}
 ]], params),
         getMax = loadCode([[
+local cache = instance.cache
 local methods = instance.methods
 return {getMax:s}
 ]], params),

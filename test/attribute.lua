@@ -273,7 +273,10 @@ do
     local instance = system:instance()
 
     assert(instance:get('生命') == 0)
-    assert(instance:get('最大生命') == 0)
+    assert(instance:getMax('生命') == 0)
+    instance:set('最大生命', 1000)
+    assert(instance:getMax('生命') == 1000)
+    assert(instance:get('最大生命') == 1000)
 end
 
 do
