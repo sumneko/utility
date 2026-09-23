@@ -1710,7 +1710,7 @@ end
 
 ---@generic T
 ---@param value T|T[]
----@return T[]?
+---@return T[]
 function m.toList(value)
     if type(value) ~= 'table' then
         return { value }
