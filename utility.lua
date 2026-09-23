@@ -1692,7 +1692,7 @@ end
 ---空表不认为是严格数组。
 ---@param t table
 ---@return boolean
-function m.isStrictArray(t)
+function m.isStrictList(t)
     if t[1] == nil then
         return false
     end
@@ -1706,6 +1706,22 @@ function m.isStrictArray(t)
         end
     end
     return true
+end
+
+---@generic T
+---@param value T|T[]
+---@return T[]?
+function m.toList(value)
+    if type(value) ~= 'table' then
+        return { value }
+    end
+    if not next(value) then
+        return value
+    end
+    if m.isStrictList(value) then
+        return value
+    end
+    return { value }
 end
 
 return m
