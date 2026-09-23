@@ -1688,4 +1688,24 @@ function m.setMetaMethod(obj, name, value)
     end
 end
 
+---判断一张表是否是严格数组（即索引从 1 开始且连续的数组）。
+---空表不认为是严格数组。
+---@param t table
+---@return boolean
+function m.isStrictArray(t)
+    if t[1] == nil then
+        return false
+    end
+    local n = 0
+    for _ in pairs(t) do
+        n = n + 1
+    end
+    for i = 1, n do
+        if t[i] == nil then
+            return false
+        end
+    end
+    return true
+end
+
 return m
