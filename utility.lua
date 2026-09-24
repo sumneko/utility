@@ -1052,6 +1052,39 @@ function m.arrayDiff(total, part)
     return diff
 end
 
+---@generic T
+---@param lists T[][] # 参与求交集的数组（顺序以第一个数组为准）
+---@return T[] # 交集中的元素（去重）
+function m.arrayIntersect(lists)
+    local result = {}
+    local first  = lists[1]
+    if not first then
+        return result
+    end
+    ---@type table<any, true>[]
+    local sets = {}
+    for i = 2, #lists do
+        sets[#sets + 1] = m.arrayToHash(lists[i])
+    end
+    local mark = {}
+    for _, v in ipairs(first) do
+        if not mark[v] then
+            mark[v] = true
+            local inAll = true
+            for _, set in ipairs(sets) do
+                if not set[v] then
+                    inAll = false
+                    break
+                end
+            end
+            if inAll then
+                result[#result + 1] = v
+            end
+        end
+    end
+    return result
+end
+
 m.MODE_K  = { __mode = 'k' }
 m.MODE_V  = { __mode = 'v' }
 m.MODE_KV = { __mode = 'kv' }
