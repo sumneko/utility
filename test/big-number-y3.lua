@@ -215,6 +215,14 @@ do
     assert(big.of(1) < 2)
     assert(2 > big.of(1))
     assert(big.of('1e9') == big.of(1000000000))
+    -- 同一数值的不同表示：12.5 与 100/8 的尾数/指数不同
+    assert(big.of(12.5) == big.divInt(big.of(100), 8))
+    assert(big.of(0.5) == big.of('0.5'))
+    assert(not (big.of(12.5) == big.of(12.500001)))
+    assert(big.cmp(big.of(12.5), big.divInt(big.of(100), 8)) == 0)
+    assert(not (big.of(12.5) < big.divInt(big.of(100), 8)))
+    assert(big.of(12.5) <= big.divInt(big.of(100), 8))
+    assert(big.of(12.5) ~= big.of(12.6))
     assert(big.of(1) ~= big.of(2))
     -- __eq 只对两侧都是大数生效
     assert(not (big.of(1) == 1))

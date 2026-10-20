@@ -9,7 +9,6 @@ local MANTISSA_MAX = 1000000000
 local PAD_MAX = MANTISSA_MAX / 10
 local NUMBER_MAX = 100000000000000
 local DIV_SCALE = 9
-local CMP_SCALE = 3
 local FLOAT_SAFE = 1e13
 
 ---@type integer[]
@@ -108,6 +107,9 @@ end
 ---@type table<number | string | BigNumber, BigNumber>
 local CACHE
 
+-- 前向声明：交给下面的构造函数赋值
+local fromNumber, fromString, format
+
 ---@param _ table
 ---@param key number | string | BigNumber
 ---@return BigNumber
@@ -119,10 +121,10 @@ local function buildAndCacheBigNumber(_, key)
     end
     local big
     if type(key) == 'string' then
-        big = M.fromString(key)
+        big = fromString(key)
     else
         ---@cast key number
-        big = M.fromNumber(key)
+        big = fromNumber(key)
     end
     CACHE[key] = big
     return big
@@ -137,57 +139,21 @@ local function wrap(mantissa, exp)
     return setmetatable({ mantissa, exp }, M)
 end
 
----由普通数值构造（|n| < 1e9 时尾数即原值、指数 0）
----@param n number
----@return BigNumber
-function M.fromNumber(n)
-    return M.normalize({ n, 0 })
-end
-
----由尾数 + 指数构造
----@param mantissa number
----@param exp integer
----@return BigNumber
-function M.fromParts(mantissa, exp)
-    return M.normalize({ mantissa, exp })
-end
-
----由十进制字符串构造（支持正负号 / 小数 / e、E 指数）
----@param text string
----@return BigNumber
-function M.fromString(text)
-    local sign, intPart, fracPart, expPart = text:match('^%s*([+-]?)(%d*)(%.?%d*)([eE]?[+-]?%d*)%s*$')
-    if not sign then
-        error('big-number: 不是合法的十进制字符串: ' .. tostring(text))
-    end
-    local frac = fracPart:gsub('%.', '')
-    local digits = intPart .. frac
-    if digits == '' then
-        error('big-number: 不是合法的十进制字符串: ' .. tostring(text))
-    end
-    local value = tonumber(digits)
-    local exp = math.floor((tonumber((expPart:gsub('[eE]', ''))) or 0) - #frac)
-    if sign == '-' then
-        value = -value
-    end
-    return M.normalize({ value, exp })
-end
-
 ---宽容收参：数值 / 十进制字符串 / 大数一律查缓存（缺失由 `__index` 构造或原样写回）
 ---@param value number | string | BigNumber
 ---@return BigNumber
-function M.of(value)
+local function of(value)
     return CACHE[value]
 end
 
 ---@return BigNumber
-function M.zero()
+local function zero()
     return wrap(0, 0)
 end
 
 ---@param big BigNumber
 ---@return boolean
-function M.isZero(big)
+local function isZero(big)
     return big[1] == 0
 end
 
@@ -233,7 +199,7 @@ end
 ---规格化（入参校验 + 归一化）
 ---@param big BigNumber
 ---@return BigNumber
-function M.normalize(big)
+local function normalize(big)
     local m = big[1]
     if m ~= m or m == math.huge or m == -math.huge then
         error('big-number: 尾数不是有限数: ' .. tostring(m))
@@ -248,14 +214,50 @@ function M.normalize(big)
     return rebuild(m, math.tointeger(e) or e)
 end
 
+---由普通数值构造（|n| < 1e9 时尾数即原值、指数 0）
+---@param n number
+---@return BigNumber
+fromNumber = function(n)
+    return normalize({ n, 0 })
+end
+
+---由尾数 + 指数构造
+---@param mantissa number
+---@param exp integer
+---@return BigNumber
+local function fromParts(mantissa, exp)
+    return normalize({ mantissa, exp })
+end
+
+---由十进制字符串构造（支持正负号 / 小数 / e、E 指数）
+---@param text string
+---@return BigNumber
+fromString = function(text)
+    local sign, intPart, fracPart, expPart = text:match('^%s*([+-]?)(%d*)(%.?%d*)([eE]?[+-]?%d*)%s*$')
+    if not sign then
+        error('big-number: 不是合法的十进制字符串: ' .. tostring(text))
+    end
+    local frac = fracPart:gsub('%.', '')
+    local digits = intPart .. frac
+    if digits == '' then
+        error('big-number: 不是合法的十进制字符串: ' .. tostring(text))
+    end
+    local value = tonumber(digits)
+    local exp = math.floor((tonumber((expPart:gsub('[eE]', ''))) or 0) - #frac)
+    if sign == '-' then
+        value = -value
+    end
+    return normalize({ value, exp })
+end
+
 ---@param a BigNumber
 ---@param b BigNumber
 ---@return BigNumber
-function M.add(a, b)
-    if M.isZero(a) then
+local function add(a, b)
+    if isZero(a) then
         return b
     end
-    if M.isZero(b) then
+    if isZero(b) then
         return a
     end
     local big, small = align(a, b)
@@ -276,7 +278,7 @@ end
 ---@param a BigNumber
 ---@param b BigNumber
 ---@return BigNumber
-function M.sub(a, b)
+local function sub(a, b)
     local am, bm = a[1], b[1]
     if bm == 0 then
         return a
@@ -312,9 +314,9 @@ end
 ---@param a BigNumber
 ---@param b BigNumber
 ---@return BigNumber
-function M.mul(a, b)
-    if M.isZero(a) or M.isZero(b) then
-        return M.zero()
+local function mul(a, b)
+    if isZero(a) or isZero(b) then
+        return zero()
     end
     local am, bm = a[1], b[1]
     -- 快路径：乘积落在安全量级内直接浮点相乘（定点浮点饱和后约 7e13，护栏取 1e13）
@@ -349,12 +351,12 @@ end
 ---@param a BigNumber
 ---@param b BigNumber
 ---@return BigNumber
-function M.div(a, b)
-    if M.isZero(b) then
+local function div(a, b)
+    if isZero(b) then
         error('big-number: 除数为零')
     end
-    if M.isZero(a) then
-        return M.zero()
+    if isZero(a) then
+        return zero()
     end
     local am, ae = asIntegerParts(a)
     local bm, be = asIntegerParts(b)
@@ -378,15 +380,15 @@ end
 
 ---@param a BigNumber
 ---@return BigNumber
-function M.neg(a)
+local function neg(a)
     return wrap(-a[1], a[2])
 end
 
 ---@param a BigNumber
 ---@return BigNumber
-function M.abs(a)
+local function abs(a)
     if a[1] < 0 then
-        return M.neg(a)
+        return neg(a)
     end
     return a
 end
@@ -394,41 +396,71 @@ end
 ---@param a BigNumber
 ---@param b BigNumber
 ---@return integer
-function M.cmp(a, b)
-    local sa, sb = signOf(a[1]), signOf(b[1])
+local function compare(a, b)
+    local am, bm = a[1], b[1]
+    local sa, sb = signOf(am), signOf(bm)
     if sa ~= sb then
         return signOf(sa - sb)
     end
     if sa == 0 then
         return 0
     end
-    local diff = a[2] - b[2]
-    if diff >= CMP_SCALE then
+    local d = a[2] - b[2]
+    if d == 0 then
+        return signOf(am - bm)
+    end
+    -- 先试算：量级不大时对齐后直接比，避免展开小数尾数
+    if d > 0 then
+        if d <= 8 then
+            local scaled = am * pow10(d)
+            if scaled < FLOAT_SAFE and scaled > -FLOAT_SAFE then
+                return signOf(scaled - bm)
+            end
+        end
+    elseif d >= -8 then
+        local scaled = bm * pow10(-d)
+        if scaled < FLOAT_SAFE and scaled > -FLOAT_SAFE then
+            return signOf(am - scaled)
+        end
+    end
+    -- 尾数可能带小数（如 12.5 与 125000000e-7），统一展开成整数再比
+    local x, xe = asIntegerParts(a)
+    local y, ye = asIntegerParts(b)
+    while x >= MANTISSA_MAX or x <= -MANTISSA_MAX do
+        x = truncDiv10(x)
+        xe = xe + 1
+    end
+    while y >= MANTISSA_MAX or y <= -MANTISSA_MAX do
+        y = truncDiv10(y)
+        ye = ye + 1
+    end
+    local diff = xe - ye
+    if diff >= 9 then
         return sa
     end
-    if diff <= -CMP_SCALE then
+    if diff <= -9 then
         return -sa
     end
-    if diff >= 0 then
-        return signOf(a[1] * pow10(diff) - b[1])
+    if diff > 0 then
+        return signOf(x * pow10(diff) - y)
     end
-    return signOf(a[1] - b[1] * pow10(-diff))
+    return signOf(x - y * pow10(-diff))
 end
 
 ---按百分比缩放（percent 为 0~100 的普通数值）
 ---@param big BigNumber
 ---@param percent number
 ---@return BigNumber
-function M.mulRatio(big, percent)
-    return M.div(M.mul(big, M.of(percent)), M.of(100))
+local function mulRatio(big, percent)
+    return div(mul(big, of(percent)), of(100))
 end
 
 ---除以整数
 ---@param big BigNumber
 ---@param n integer
 ---@return BigNumber
-function M.divInt(big, n)
-    return M.div(big, M.of(n))
+local function divInt(big, n)
+    return div(big, of(n))
 end
 
 ---@param big BigNumber
@@ -446,12 +478,12 @@ end
 ---转普通数值（仅 |值| < 1e14 允许，超出直接报错）
 ---@param big BigNumber
 ---@return number
-function M.toNumber(big)
-    if M.isZero(big) then
+local function toNumber(big)
+    if isZero(big) then
         return 0
     end
     if big[2] >= 15 or big[2] <= -15 then
-        error('big-number: 超出可转普通数值的范围: ' .. M.format(big))
+        error('big-number: 超出可转普通数值的范围: ' .. format(big))
     end
     local m = big[1]
     local e = big[2]
@@ -461,7 +493,7 @@ function M.toNumber(big)
             -- 整数尾数：用整数比较上界后走整数乘法（定点运行时大数浮点除会饱和）
             local p = pow10(e)
             if math.abs(i) >= (NUMBER_MAX + p - 1) // p then
-                error('big-number: 超出可转普通数值的范围: ' .. M.format(big))
+                error('big-number: 超出可转普通数值的范围: ' .. format(big))
             end
             return i * p
         end
@@ -469,11 +501,11 @@ function M.toNumber(big)
         return math.tointeger(value) or value
     end
     if powerOf(big) >= 14 then
-        error('big-number: 超出可转普通数值的范围: ' .. M.format(big))
+        error('big-number: 超出可转普通数值的范围: ' .. format(big))
     end
     local value = scale(m, e)
     if value >= NUMBER_MAX or value <= -NUMBER_MAX then
-        error('big-number: 超出可转普通数值的范围: ' .. M.format(big))
+        error('big-number: 超出可转普通数值的范围: ' .. format(big))
     end
     return math.tointeger(value) or value
 end
@@ -481,8 +513,8 @@ end
 ---比值转普通数值（0~1 的小数：量级再小也直接按浮点返回，不触发「超出可转范围」的报错）
 ---@param big BigNumber
 ---@return number
-function M.toRatio(big)
-    if M.isZero(big) then
+local function toRatio(big)
+    if isZero(big) then
         return 0
     end
     return scale(big[1], big[2])
@@ -532,8 +564,8 @@ end
 ---完整格式化（< 1e4 直出整数，否则折十进制数量级、保留 2 位小数）
 ---@param big BigNumber
 ---@return string
-function M.format(big)
-    if M.isZero(big) then
+format = function(big)
+    if isZero(big) then
         return '0'
     end
     return render(big, 2)
@@ -542,47 +574,112 @@ end
 ---跳字用短格式（< 1e4 直出整数，否则保留 1 位小数）
 ---@param big BigNumber
 ---@return string
-function M.formatShort(big)
-    if M.isZero(big) then
+local function formatShort(big)
+    if isZero(big) then
         return '0'
     end
     return render(big, 1)
 end
 
-function M.__add(a, b)
-    return M.add(M.of(a), M.of(b))
+-- 对外 API
+M.fromNumber = fromNumber
+M.fromParts = fromParts
+M.fromString = fromString
+M.of = of
+M.zero = zero
+M.isZero = isZero
+M.normalize = normalize
+M.add = add
+M.sub = sub
+M.mul = mul
+M.div = div
+M.neg = neg
+M.abs = abs
+M.cmp = compare
+M.mulRatio = mulRatio
+M.divInt = divInt
+M.toNumber = toNumber
+M.toRatio = toRatio
+M.format = format
+M.formatShort = formatShort
+
+-- 元方法
+M.__add = function(a, b)
+    return add(of(a), of(b))
 end
 
-function M.__sub(a, b)
-    return M.sub(M.of(a), M.of(b))
+M.__sub = function(a, b)
+    return sub(of(a), of(b))
 end
 
-function M.__mul(a, b)
-    return M.mul(M.of(a), M.of(b))
+M.__mul = function(a, b)
+    return mul(of(a), of(b))
 end
 
-function M.__div(a, b)
-    return M.div(M.of(a), M.of(b))
+M.__div = function(a, b)
+    return div(of(a), of(b))
 end
 
-function M.__unm(a)
-    return M.neg(M.of(a))
+M.__unm = function(a)
+    return neg(of(a))
 end
 
-function M.__lt(a, b)
-    return M.cmp(M.of(a), M.of(b)) < 0
+M.__lt = function(a, b)
+    -- 比较运算可能混入普通数值，此时才走收参
+    if type(a) ~= 'table' then
+        a = of(a)
+    end
+    if type(b) ~= 'table' then
+        b = of(b)
+    end
+    local am, bm = a[1], b[1]
+    local sa, sb = signOf(am), signOf(bm)
+    if sa ~= sb then
+        return sa < sb
+    end
+    if sa == 0 then
+        return false
+    end
+    if a[2] == b[2] then
+        return am < bm
+    end
+    return compare(a, b) < 0
 end
 
-function M.__le(a, b)
-    return M.cmp(M.of(a), M.of(b)) <= 0
+M.__le = function(a, b)
+    if type(a) ~= 'table' then
+        a = of(a)
+    end
+    if type(b) ~= 'table' then
+        b = of(b)
+    end
+    local am, bm = a[1], b[1]
+    local sa, sb = signOf(am), signOf(bm)
+    if sa ~= sb then
+        return sa < sb
+    end
+    if sa == 0 then
+        return true
+    end
+    if a[2] == b[2] then
+        return am <= bm
+    end
+    return compare(a, b) <= 0
 end
 
-function M.__eq(a, b)
-    return M.cmp(M.of(a), M.of(b)) == 0
+M.__eq = function(a, b)
+    local am, bm = a[1], b[1]
+    if am == bm then
+        return am == 0 or a[2] == b[2]
+    end
+    if am == 0 or bm == 0 then
+        return false
+    end
+    return compare(a, b) == 0
 end
 
-function M.__tostring(a)
-    return M.format(a)
+M.__tostring = function(a)
+    return format(a)
 end
 
 return M
