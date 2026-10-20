@@ -1,8 +1,8 @@
----@class BigNumber
+---@class BigNumberY3
 ---@field [1] number # 尾数：0 或 |值| ∈ [1, 1e9)；指数为 0 时即原值（可为小数）
 ---@field [2] integer # 十进制指数，值 = 尾数 * 10^指数；规格化时补位到 0 为止，搬移只向上
 
----@class bigNumberY3 # 大数工具命名空间（针对 y3 运行时：整数为 int64，浮点为定点实现，上限约 2^46）
+---@class BigNumberY3.API # 大数工具命名空间（针对 y3 运行时：整数为 int64，浮点为定点实现，上限约 2^46）
 local M = {}
 
 -- 头部局部化：避免热路径上的全局表查找
@@ -108,18 +108,18 @@ local function asIntegerParts(m, e)
     return floor(m + 0.5), e
 end
 
----@type table<number | string | BigNumber, BigNumber>
+---@type table<number | string | BigNumberY3, BigNumberY3>
 local CACHE
 
 -- 前向声明：交给下面的构造函数赋值
 local fromNumber, fromString, format
 
 ---@param _ table
----@param key number | string | BigNumber
----@return BigNumber
-local function buildAndCacheBigNumber(_, key)
+---@param key number | string | BigNumberY3
+---@return BigNumberY3
+local function buildAndCacheBigNumberY3(_, key)
     if type(key) == 'table' then
-        ---@cast key BigNumber
+        ---@cast key BigNumberY3
         CACHE[key] = key
         return key
     end
@@ -134,28 +134,28 @@ local function buildAndCacheBigNumber(_, key)
     return big
 end
 
-CACHE = setmetatable({}, { __mode = 'kv', __index = buildAndCacheBigNumber })
+CACHE = setmetatable({}, { __mode = 'kv', __index = buildAndCacheBigNumberY3 })
 
 ---@param mantissa number
 ---@param exp integer
----@return BigNumber
+---@return BigNumberY3
 local function wrap(mantissa, exp)
     return setmetatable({ mantissa, exp }, M)
 end
 
 ---宽容收参：数值 / 十进制字符串 / 大数一律查缓存（缺失由 `__index` 构造或原样写回）
----@param value number | string | BigNumber
----@return BigNumber
+---@param value number | string | BigNumberY3
+---@return BigNumberY3
 local function of(value)
     return CACHE[value]
 end
 
----@return BigNumber
+---@return BigNumberY3
 local function zero()
     return wrap(0, 0)
 end
 
----@param big BigNumber
+---@param big BigNumberY3
 ---@return boolean
 local function isZero(big)
     return big[1] == 0
@@ -164,7 +164,7 @@ end
 ---规格化（内部运算专用，不做入参校验）
 ---@param m number
 ---@param e integer
----@return BigNumber
+---@return BigNumberY3
 local function rebuild(m, e)
     if m == 0 then
         return wrap(0, 0)
@@ -201,8 +201,8 @@ local function rebuild(m, e)
 end
 
 ---规格化（入参校验 + 归一化）
----@param big BigNumber
----@return BigNumber
+---@param big BigNumberY3
+---@return BigNumberY3
 local function normalize(big)
     local m = big[1]
     if m ~= m or m == huge or m == -huge then
@@ -220,7 +220,7 @@ end
 
 ---由普通数值构造（|n| < 1e9 时尾数即原值、指数 0）
 ---@param n number
----@return BigNumber
+---@return BigNumberY3
 fromNumber = function(n)
     return normalize({ n, 0 })
 end
@@ -228,14 +228,14 @@ end
 ---由尾数 + 指数构造
 ---@param mantissa number
 ---@param exp integer
----@return BigNumber
+---@return BigNumberY3
 local function fromParts(mantissa, exp)
     return normalize({ mantissa, exp })
 end
 
 ---由十进制字符串构造（支持正负号 / 小数 / e、E 指数）
 ---@param text string
----@return BigNumber
+---@return BigNumberY3
 fromString = function(text)
     local sign, intPart, fracPart, expPart = text:match('^%s*([+-]?)(%d*)(%.?%d*)([eE]?[+-]?%d*)%s*$')
     if not sign then
@@ -258,7 +258,7 @@ end
 ---@param ae integer
 ---@param bm number
 ---@param be integer
----@return BigNumber
+---@return BigNumberY3
 local function addParts(am, ae, bm, be)
     if am == 0 then
         return wrap(bm, be)
@@ -288,7 +288,7 @@ end
 ---@param ae integer
 ---@param bm number
 ---@param be integer
----@return BigNumber
+---@return BigNumberY3
 local function subParts(am, ae, bm, be)
     if bm == 0 then
         return wrap(am, ae)
@@ -324,7 +324,7 @@ end
 ---@param ae integer
 ---@param bm number
 ---@param be integer
----@return BigNumber
+---@return BigNumberY3
 local function mulParts(am, ae, bm, be)
     if am == 0 or bm == 0 then
         return zero()
@@ -362,7 +362,7 @@ end
 ---@param ae integer
 ---@param bm number
 ---@param be integer
----@return BigNumber
+---@return BigNumberY3
 local function divParts(am, ae, bm, be)
     if bm == 0 then
         error('big-number: 除数为零')
@@ -390,9 +390,9 @@ local function divParts(am, ae, bm, be)
     return rebuild(q, ae - be - DIV_SCALE)
 end
 
----@param a BigNumber
----@param b BigNumber
----@return BigNumber
+---@param a BigNumberY3
+---@param b BigNumberY3
+---@return BigNumberY3
 local function add(a, b)
     if a[1] == 0 then
         return b
@@ -403,9 +403,9 @@ local function add(a, b)
     return addParts(a[1], a[2], b[1], b[2])
 end
 
----@param a BigNumber
----@param b BigNumber
----@return BigNumber
+---@param a BigNumberY3
+---@param b BigNumberY3
+---@return BigNumberY3
 local function sub(a, b)
     if b[1] == 0 then
         return a
@@ -413,9 +413,9 @@ local function sub(a, b)
     return subParts(a[1], a[2], b[1], b[2])
 end
 
----@param a BigNumber
----@param b BigNumber
----@return BigNumber
+---@param a BigNumberY3
+---@param b BigNumberY3
+---@return BigNumberY3
 local function mul(a, b)
     if a[1] == 0 or b[1] == 0 then
         return zero()
@@ -423,9 +423,9 @@ local function mul(a, b)
     return mulParts(a[1], a[2], b[1], b[2])
 end
 
----@param a BigNumber
----@param b BigNumber
----@return BigNumber
+---@param a BigNumberY3
+---@param b BigNumberY3
+---@return BigNumberY3
 local function div(a, b)
     if b[1] == 0 then
         error('big-number: 除数为零')
@@ -436,14 +436,14 @@ local function div(a, b)
     return divParts(a[1], a[2], b[1], b[2])
 end
 
----@param a BigNumber
----@return BigNumber
+---@param a BigNumberY3
+---@return BigNumberY3
 local function neg(a)
     return wrap(-a[1], a[2])
 end
 
----@param a BigNumber
----@return BigNumber
+---@param a BigNumberY3
+---@return BigNumberY3
 local function abs(a)
     if a[1] < 0 then
         return neg(a)
@@ -451,8 +451,8 @@ local function abs(a)
     return a
 end
 
----@param a BigNumber
----@param b BigNumber
+---@param a BigNumberY3
+---@param b BigNumberY3
 ---@return integer
 local function compare(a, b)
     local am, bm = a[1], b[1]
@@ -506,24 +506,24 @@ local function compare(a, b)
 end
 
 ---按百分比缩放（percent 为 0~100 的普通数值）
----@param big BigNumber
+---@param big BigNumberY3
 ---@param percent number
----@return BigNumber
+---@return BigNumberY3
 local function mulRatio(big, percent)
     return div(mul(big, of(percent)), of(100))
 end
 
 ---除以整数
----@param big BigNumber
+---@param big BigNumberY3
 ---@param n integer
----@return BigNumber
+---@return BigNumberY3
 local function divInt(big, n)
     return div(big, of(n))
 end
 
 ---按数值向上取整
----@param big BigNumber
----@return BigNumber
+---@param big BigNumberY3
+---@return BigNumberY3
 local function ceil(big)
     local mantissa, exp = big[1], big[2]
     if exp >= 0 then
@@ -537,8 +537,8 @@ local function ceil(big)
 end
 
 ---按数值向下取整
----@param big BigNumber
----@return BigNumber
+---@param big BigNumberY3
+---@return BigNumberY3
 local function floorValue(big)
     local mantissa, exp = big[1], big[2]
     if exp >= 0 then
@@ -551,7 +551,7 @@ local function floorValue(big)
     return rebuild(floor(scale(mantissa, exp)), 0)
 end
 
----@param x number | string | BigNumber
+---@param x number | string | BigNumberY3
 ---@return number
 ---@return integer
 local function partsOf(x)
@@ -566,7 +566,7 @@ end
 ---@param am number
 ---@param ae integer
 ---@param n integer
----@return BigNumber
+---@return BigNumberY3
 local function powInt(am, ae, n)
     local rm, re = 1, 0
     local bm, be = am, ae
@@ -584,7 +584,7 @@ local function powInt(am, ae, n)
     return rebuild(rm, re)
 end
 
----@param big BigNumber
+---@param big BigNumberY3
 ---@return integer
 local function powerOf(big)
     local m = mabs(big[1])
@@ -597,7 +597,7 @@ local function powerOf(big)
 end
 
 ---转普通数值（仅 |值| < 1e14 允许，超出直接报错）
----@param big BigNumber
+---@param big BigNumberY3
 ---@return number
 local function toNumber(big)
     if isZero(big) then
@@ -632,7 +632,7 @@ local function toNumber(big)
 end
 
 ---比值转普通数值（0~1 的小数：量级再小也直接按浮点返回，不触发「超出可转范围」的报错）
----@param big BigNumber
+---@param big BigNumberY3
 ---@return number
 local function toRatio(big)
     if isZero(big) then
@@ -648,7 +648,7 @@ local UNITS = {
 }
 
 ---小数量级直出：整数照旧，非整数保留小数并去掉末尾 0
----@param big BigNumber
+---@param big BigNumberY3
 ---@return string
 local function renderFixed(big)
     local value = scale(big[1], big[2])
@@ -665,7 +665,7 @@ local function renderFixed(big)
     return text
 end
 
----@param big BigNumber
+---@param big BigNumberY3
 ---@param decimals integer
 ---@return string
 local function render(big, decimals)
@@ -683,7 +683,7 @@ local function render(big, decimals)
 end
 
 ---完整格式化（< 1e4 直出整数，否则折十进制数量级、保留 2 位小数）
----@param big BigNumber
+---@param big BigNumberY3
 ---@return string
 format = function(big)
     if isZero(big) then
@@ -693,7 +693,7 @@ format = function(big)
 end
 
 ---跳字用短格式（< 1e4 直出整数，否则保留 1 位小数）
----@param big BigNumber
+---@param big BigNumberY3
 ---@return string
 local function formatShort(big)
     if isZero(big) then
