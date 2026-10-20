@@ -5,6 +5,21 @@
 ---@class bigNumberY3 # 大数工具命名空间（针对 y3 运行时：整数为 int64，浮点为定点实现，上限约 2^46）
 local M = {}
 
+-- 头部局部化：避免热路径上的全局表查找
+local mabs = math.abs
+local tointeger = math.tointeger
+local floor = math.floor
+local mceil = math.ceil
+local huge = math.huge
+local mininteger = math.mininteger
+local maxinteger = math.maxinteger
+local tonumber = tonumber
+local tostring = tostring
+local type = type
+local error = error
+local setmetatable = setmetatable
+local sformat = string.format
+
 local MANTISSA_MAX = 1000000000
 local PAD_MAX = MANTISSA_MAX / 10
 local NUMBER_MAX = 100000000000000
@@ -69,7 +84,7 @@ local function truncDiv10(value)
     else
         half = -((-value) // 10)
     end
-    return math.tointeger(half) or half
+    return tointeger(half) or half
 end
 
 ---@param m number
@@ -77,7 +92,7 @@ end
 ---@return integer
 ---@return integer
 local function asIntegerParts(m, e)
-    local i = math.tointeger(m)
+    local i = tointeger(m)
     if i then
         return i, e
     end
@@ -86,10 +101,10 @@ local function asIntegerParts(m, e)
         m = m * 10
         e = e - 1
         if m % 1 == 0 then
-            return math.floor(m + 0.5), e
+            return floor(m + 0.5), e
         end
     end
-    return math.floor(m + 0.5), e
+    return floor(m + 0.5), e
 end
 
 ---@type table<number | string | BigNumber, BigNumber>
@@ -158,12 +173,12 @@ local function rebuild(m, e)
         e = e - 1
     end
     if m >= MANTISSA_MAX or m <= -MANTISSA_MAX then
-        local i = math.tointeger(m)
+        local i = tointeger(m)
         if i then
             local magnitude = i
             if i < 0 then
                 -- mininteger 取负会溢出，用 maxinteger 代替（除以 1e10 后结果相同）
-                magnitude = i == math.mininteger and math.maxinteger or -i
+                magnitude = i == mininteger and maxinteger or -i
             end
             local drop = 1
             while drop < 10 and magnitude >= POW10[drop + 10] do
@@ -189,17 +204,17 @@ end
 ---@return BigNumber
 local function normalize(big)
     local m = big[1]
-    if m ~= m or m == math.huge or m == -math.huge then
+    if m ~= m or m == huge or m == -huge then
         error('big-number: 尾数不是有限数: ' .. tostring(m))
     end
     if m == 0 then
         return wrap(0, 0)
     end
     local e = big[2]
-    if e ~= math.floor(e) or e > 1e15 or e < -1e15 then
+    if e ~= floor(e) or e > 1e15 or e < -1e15 then
         error('big-number: 指数必须是范围内的整数: ' .. tostring(e))
     end
-    return rebuild(m, math.tointeger(e) or e)
+    return rebuild(m, tointeger(e) or e)
 end
 
 ---由普通数值构造（|n| < 1e9 时尾数即原值、指数 0）
@@ -231,7 +246,7 @@ fromString = function(text)
         error('big-number: 不是合法的十进制字符串: ' .. tostring(text))
     end
     local value = tonumber(digits)
-    local exp = math.floor((tonumber((expPart:gsub('[eE]', ''))) or 0) - #frac)
+    local exp = floor((tonumber((expPart:gsub('[eE]', ''))) or 0) - #frac)
     if sign == '-' then
         value = -value
     end
@@ -262,7 +277,7 @@ local function addParts(am, ae, bm, be)
         return wrap(am, ae)
     end
     local drop = bm / pow10(diff)
-    if math.abs(drop) < 0.5 then
+    if mabs(drop) < 0.5 then
         return wrap(am, ae)
     end
     return rebuild(am + drop, ae)
@@ -289,7 +304,7 @@ local function subParts(am, ae, bm, be)
             return wrap(am, ae)
         end
         local drop = bm / pow10(diff)
-        if math.abs(drop) < 0.5 then
+        if mabs(drop) < 0.5 then
             return wrap(am, ae)
         end
         return rebuild(am - drop, ae)
@@ -298,7 +313,7 @@ local function subParts(am, ae, bm, be)
         return wrap(-bm, be)
     end
     local drop = am / pow10(-diff)
-    if math.abs(drop) < 0.5 then
+    if mabs(drop) < 0.5 then
         return wrap(-bm, be)
     end
     return rebuild(drop - bm, be)
@@ -318,11 +333,11 @@ local function mulParts(am, ae, bm, be)
     if product < FLOAT_SAFE and product > -FLOAT_SAFE then
         if product >= PAD_MAX or product <= -PAD_MAX then
             -- 已占满 9 位有效数字，小数部分只会是浮点噪尾
-            product = product >= 0 and math.floor(product) or -math.floor(-product)
+            product = product >= 0 and floor(product) or -floor(-product)
         end
         return rebuild(product, ae + be)
     end
-    local ai, bi = math.tointeger(am), math.tointeger(bm)
+    local ai, bi = tointeger(am), tointeger(bm)
     if ai and bi then
         -- 整数尾数：乘积 < 1e18，int64 精确
         return rebuild(ai * bi, ae + be)
@@ -357,7 +372,7 @@ local function divParts(am, ae, bm, be)
     am, ae = asIntegerParts(am, ae)
     bm, be = asIntegerParts(bm, be)
     local negative = (am < 0) ~= (bm < 0)
-    am, bm = math.abs(am), math.abs(bm)
+    am, bm = mabs(am), mabs(bm)
     while am >= MANTISSA_MAX do
         am = truncDiv10(am)
         ae = ae + 1
@@ -511,19 +526,19 @@ end
 local function ceil(big)
     local mantissa, exp = big[1], big[2]
     if exp >= 0 then
-        local value = math.ceil(mantissa)
+        local value = mceil(mantissa)
         if value == mantissa then
             return big
         end
         return rebuild(value, exp)
     end
-    return rebuild(math.ceil(scale(mantissa, exp)), 0)
+    return rebuild(mceil(scale(mantissa, exp)), 0)
 end
 
 ---@param big BigNumber
 ---@return integer
 local function powerOf(big)
-    local m = math.abs(big[1])
+    local m = mabs(big[1])
     local n = 0
     while m >= 1 do
         m = truncDiv10(m)
@@ -544,18 +559,18 @@ local function toNumber(big)
     end
     local m = big[1]
     local e = big[2]
-    local i = math.tointeger(m)
+    local i = tointeger(m)
     if i then
         if e >= 0 then
             -- 整数尾数：用整数比较上界后走整数乘法（定点运行时大数浮点除会饱和）
             local p = pow10(e)
-            if math.abs(i) >= (NUMBER_MAX + p - 1) // p then
+            if mabs(i) >= (NUMBER_MAX + p - 1) // p then
                 error('big-number: 超出可转普通数值的范围: ' .. format(big))
             end
             return i * p
         end
         local value = scale(m, e)
-        return math.tointeger(value) or value
+        return tointeger(value) or value
     end
     if powerOf(big) >= 14 then
         error('big-number: 超出可转普通数值的范围: ' .. format(big))
@@ -564,7 +579,7 @@ local function toNumber(big)
     if value >= NUMBER_MAX or value <= -NUMBER_MAX then
         error('big-number: 超出可转普通数值的范围: ' .. format(big))
     end
-    return math.tointeger(value) or value
+    return tointeger(value) or value
 end
 
 ---比值转普通数值（0~1 的小数：量级再小也直接按浮点返回，不触发「超出可转范围」的报错）
@@ -588,15 +603,15 @@ local UNITS = {
 ---@return string
 local function renderFixed(big)
     local value = scale(big[1], big[2])
-    local i = math.tointeger(value)
+    local i = tointeger(value)
     if i then
-        return string.format('%d', i)
+        return sformat('%d', i)
     end
-    local text = string.format('%.9f', value)
+    local text = sformat('%.9f', value)
     text = text:gsub('0+$', '')
     text = text:gsub('%.$', '')
     if text == '0' or text == '-' or text == '-0' then
-        return string.format('%.9g', value)
+        return sformat('%.9g', value)
     end
     return text
 end
@@ -612,10 +627,10 @@ local function render(big, decimals)
     local unitPower = power - (power % 4)
     local unit = UNITS[unitPower]
     if unit then
-        return string.format('%.' .. decimals .. 'f%s', scale(big[1], big[2] - unitPower), unit)
+        return sformat('%.' .. decimals .. 'f%s', scale(big[1], big[2] - unitPower), unit)
     end
     local digits = power - big[2] + 1
-    return string.format('%.' .. decimals .. 'fe+%d', scale(big[1], -(digits - 1)), power)
+    return sformat('%.' .. decimals .. 'fe+%d', scale(big[1], -(digits - 1)), power)
 end
 
 ---完整格式化（< 1e4 直出整数，否则折十进制数量级、保留 2 位小数）
