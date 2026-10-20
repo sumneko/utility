@@ -72,12 +72,11 @@ local function truncDiv10(value)
     return math.tointeger(half) or half
 end
 
----@param big BigNumber
+---@param m number
+---@param e integer
 ---@return integer
 ---@return integer
-local function asIntegerParts(big)
-    local m = big[1]
-    local e = big[2]
+local function asIntegerParts(m, e)
     local i = math.tointeger(m)
     if i then
         return i, e
@@ -91,17 +90,6 @@ local function asIntegerParts(big)
         end
     end
     return math.floor(m + 0.5), e
-end
-
----@param a BigNumber
----@param b BigNumber
----@return BigNumber
----@return BigNumber
-local function align(a, b)
-    if a[2] >= b[2] then
-        return a, b
-    end
-    return b, a
 end
 
 ---@type table<number | string | BigNumber, BigNumber>
@@ -250,54 +238,59 @@ fromString = function(text)
     return normalize({ value, exp })
 end
 
----@param a BigNumber
----@param b BigNumber
+---@param am number
+---@param ae integer
+---@param bm number
+---@param be integer
 ---@return BigNumber
-local function add(a, b)
-    if isZero(a) then
-        return b
+local function addParts(am, ae, bm, be)
+    if am == 0 then
+        return wrap(bm, be)
     end
-    if isZero(b) then
-        return a
+    if bm == 0 then
+        return wrap(am, ae)
     end
-    local big, small = align(a, b)
-    local diff = big[2] - small[2]
+    if ae < be then
+        am, bm = bm, am
+        ae, be = be, ae
+    end
+    local diff = ae - be
     if diff == 0 then
-        return rebuild(big[1] + small[1], big[2])
+        return rebuild(am + bm, ae)
     end
     if diff >= DIV_SCALE * 2 then
-        return big
+        return wrap(am, ae)
     end
-    local drop = small[1] / pow10(diff)
+    local drop = bm / pow10(diff)
     if math.abs(drop) < 0.5 then
-        return big
+        return wrap(am, ae)
     end
-    return rebuild(big[1] + drop, big[2])
+    return rebuild(am + drop, ae)
 end
 
----@param a BigNumber
----@param b BigNumber
+---@param am number
+---@param ae integer
+---@param bm number
+---@param be integer
 ---@return BigNumber
-local function sub(a, b)
-    local am, bm = a[1], b[1]
+local function subParts(am, ae, bm, be)
     if bm == 0 then
-        return a
+        return wrap(am, ae)
     end
     if am == 0 then
-        return wrap(-bm, b[2])
+        return wrap(-bm, be)
     end
-    local ae, be = a[2], b[2]
     local diff = ae - be
     if diff == 0 then
         return rebuild(am - bm, ae)
     end
     if diff > 0 then
         if diff >= DIV_SCALE * 2 then
-            return a
+            return wrap(am, ae)
         end
         local drop = bm / pow10(diff)
         if math.abs(drop) < 0.5 then
-            return a
+            return wrap(am, ae)
         end
         return rebuild(am - drop, ae)
     end
@@ -311,32 +304,33 @@ local function sub(a, b)
     return rebuild(drop - bm, be)
 end
 
----@param a BigNumber
----@param b BigNumber
+---@param am number
+---@param ae integer
+---@param bm number
+---@param be integer
 ---@return BigNumber
-local function mul(a, b)
-    if isZero(a) or isZero(b) then
+local function mulParts(am, ae, bm, be)
+    if am == 0 or bm == 0 then
         return zero()
     end
-    local am, bm = a[1], b[1]
     -- 快路径：乘积落在安全量级内直接浮点相乘（定点浮点饱和后约 7e13，护栏取 1e13）
     local product = am * bm
     if product < FLOAT_SAFE and product > -FLOAT_SAFE then
-        if product >= MANTISSA_MAX / 10 or product <= -MANTISSA_MAX / 10 then
+        if product >= PAD_MAX or product <= -PAD_MAX then
             -- 已占满 9 位有效数字，小数部分只会是浮点噪尾
             product = product >= 0 and math.floor(product) or -math.floor(-product)
         end
-        return rebuild(product, a[2] + b[2])
+        return rebuild(product, ae + be)
     end
     local ai, bi = math.tointeger(am), math.tointeger(bm)
     if ai and bi then
         -- 整数尾数：乘积 < 1e18，int64 精确
-        return rebuild(ai * bi, a[2] + b[2])
+        return rebuild(ai * bi, ae + be)
     end
     -- 小数尾数且乘积超大：展开成整数并压回 < 1e9，乘积同样 < 1e18
     -- （定点运行时浮点上限约 2^46，超量级时不能用浮点乘法）
-    local x, xe = asIntegerParts(a)
-    local y, ye = asIntegerParts(b)
+    local x, xe = asIntegerParts(am, ae)
+    local y, ye = asIntegerParts(bm, be)
     while x >= MANTISSA_MAX or x <= -MANTISSA_MAX do
         x = truncDiv10(x)
         xe = xe + 1
@@ -348,18 +342,20 @@ local function mul(a, b)
     return rebuild(x * y, xe + ye)
 end
 
----@param a BigNumber
----@param b BigNumber
+---@param am number
+---@param ae integer
+---@param bm number
+---@param be integer
 ---@return BigNumber
-local function div(a, b)
-    if isZero(b) then
+local function divParts(am, ae, bm, be)
+    if bm == 0 then
         error('big-number: 除数为零')
     end
-    if isZero(a) then
+    if am == 0 then
         return zero()
     end
-    local am, ae = asIntegerParts(a)
-    local bm, be = asIntegerParts(b)
+    am, ae = asIntegerParts(am, ae)
+    bm, be = asIntegerParts(bm, be)
     local negative = (am < 0) ~= (bm < 0)
     am, bm = math.abs(am), math.abs(bm)
     while am >= MANTISSA_MAX do
@@ -376,6 +372,52 @@ local function div(a, b)
         q = -q
     end
     return rebuild(q, ae - be - DIV_SCALE)
+end
+
+---@param a BigNumber
+---@param b BigNumber
+---@return BigNumber
+local function add(a, b)
+    if a[1] == 0 then
+        return b
+    end
+    if b[1] == 0 then
+        return a
+    end
+    return addParts(a[1], a[2], b[1], b[2])
+end
+
+---@param a BigNumber
+---@param b BigNumber
+---@return BigNumber
+local function sub(a, b)
+    if b[1] == 0 then
+        return a
+    end
+    return subParts(a[1], a[2], b[1], b[2])
+end
+
+---@param a BigNumber
+---@param b BigNumber
+---@return BigNumber
+local function mul(a, b)
+    if a[1] == 0 or b[1] == 0 then
+        return zero()
+    end
+    return mulParts(a[1], a[2], b[1], b[2])
+end
+
+---@param a BigNumber
+---@param b BigNumber
+---@return BigNumber
+local function div(a, b)
+    if b[1] == 0 then
+        error('big-number: 除数为零')
+    end
+    if a[1] == 0 then
+        return zero()
+    end
+    return divParts(a[1], a[2], b[1], b[2])
 end
 
 ---@param a BigNumber
@@ -424,8 +466,8 @@ local function compare(a, b)
         end
     end
     -- 尾数可能带小数（如 12.5 与 125000000e-7），统一展开成整数再比
-    local x, xe = asIntegerParts(a)
-    local y, ye = asIntegerParts(b)
+    local x, xe = asIntegerParts(a[1], a[2])
+    local y, ye = asIntegerParts(b[1], b[2])
     while x >= MANTISSA_MAX or x <= -MANTISSA_MAX do
         x = truncDiv10(x)
         xe = xe + 1
@@ -621,23 +663,109 @@ M.formatShort = formatShort
 
 -- 元方法
 M.__add = function(a, b)
-    return add(of(a), of(b))
+    local ta, tb = type(a), type(b)
+    local am, ae, bm, be
+    if ta == 'table' then
+        am, ae = a[1], a[2]
+    elseif ta == 'number' and a > -MANTISSA_MAX and a < MANTISSA_MAX then
+        am, ae = a, 0
+    else
+        local v = of(a)
+        am, ae = v[1], v[2]
+    end
+    if tb == 'table' then
+        bm, be = b[1], b[2]
+    elseif tb == 'number' and b > -MANTISSA_MAX and b < MANTISSA_MAX then
+        bm, be = b, 0
+    else
+        local v = of(b)
+        bm, be = v[1], v[2]
+    end
+    -- 保持零值直接返回另一侧实例的语义
+    if am == 0 then
+        return tb == 'table' and b or wrap(bm, be)
+    end
+    if bm == 0 then
+        return ta == 'table' and a or wrap(am, ae)
+    end
+    return addParts(am, ae, bm, be)
 end
 
 M.__sub = function(a, b)
-    return sub(of(a), of(b))
+    local ta, tb = type(a), type(b)
+    local am, ae, bm, be
+    if ta == 'table' then
+        am, ae = a[1], a[2]
+    elseif ta == 'number' and a > -MANTISSA_MAX and a < MANTISSA_MAX then
+        am, ae = a, 0
+    else
+        local v = of(a)
+        am, ae = v[1], v[2]
+    end
+    if tb == 'table' then
+        bm, be = b[1], b[2]
+    elseif tb == 'number' and b > -MANTISSA_MAX and b < MANTISSA_MAX then
+        bm, be = b, 0
+    else
+        local v = of(b)
+        bm, be = v[1], v[2]
+    end
+    if bm == 0 then
+        return ta == 'table' and a or wrap(am, ae)
+    end
+    return subParts(am, ae, bm, be)
 end
 
 M.__mul = function(a, b)
-    return mul(of(a), of(b))
+    local ta, tb = type(a), type(b)
+    local am, ae, bm, be
+    if ta == 'table' then
+        am, ae = a[1], a[2]
+    elseif ta == 'number' and a > -MANTISSA_MAX and a < MANTISSA_MAX then
+        am, ae = a, 0
+    else
+        local v = of(a)
+        am, ae = v[1], v[2]
+    end
+    if tb == 'table' then
+        bm, be = b[1], b[2]
+    elseif tb == 'number' and b > -MANTISSA_MAX and b < MANTISSA_MAX then
+        bm, be = b, 0
+    else
+        local v = of(b)
+        bm, be = v[1], v[2]
+    end
+    return mulParts(am, ae, bm, be)
 end
 
 M.__div = function(a, b)
-    return div(of(a), of(b))
+    local ta, tb = type(a), type(b)
+    local am, ae, bm, be
+    if ta == 'table' then
+        am, ae = a[1], a[2]
+    elseif ta == 'number' and a > -MANTISSA_MAX and a < MANTISSA_MAX then
+        am, ae = a, 0
+    else
+        local v = of(a)
+        am, ae = v[1], v[2]
+    end
+    if tb == 'table' then
+        bm, be = b[1], b[2]
+    elseif tb == 'number' and b > -MANTISSA_MAX and b < MANTISSA_MAX then
+        bm, be = b, 0
+    else
+        local v = of(b)
+        bm, be = v[1], v[2]
+    end
+    return divParts(am, ae, bm, be)
 end
 
 M.__unm = function(a)
-    return neg(of(a))
+    if type(a) == 'table' then
+        return wrap(-a[1], a[2])
+    end
+    local v = of(a)
+    return wrap(-v[1], v[2])
 end
 
 M.__lt = function(a, b)
