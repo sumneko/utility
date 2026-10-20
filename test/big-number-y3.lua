@@ -170,6 +170,22 @@ do
     assert(not pcall(big.toNumber, big.fromString('1e-15')))
 end
 
+-- 向上取整：按数值，不是只取尾数
+do
+    assert(big.toNumber(big.ceil(big.of(12.5))) == 13)
+    assert(big.toNumber(big.ceil(big.of(-12.5))) == -12)
+    assert(big.toNumber(big.ceil(big.zero())) == 0)
+    assert(rawequal(big.ceil(big.of(28)), big.of(28)))
+
+    -- 乘区除法产物指数为负，尾数本身已是整数
+    assert(big.toNumber(big.ceil(big.div(big.mul(big.of(100), big.of(100)), big.of(350)))) == 29)
+    assert(big.toNumber(big.ceil(big.fromParts(285714285, -7))) == 29)
+    local v = big.fromParts(285714285, 9)
+    assert(rawequal(big.ceil(v), v))
+    local w = big.div(big.mul(big.fromString('1e18'), big.of(100)), big.of(350))
+    assert(rawequal(big.ceil(w), w))
+end
+
 -- 格式化
 do
     assert(big.format(big.zero()) == '0')

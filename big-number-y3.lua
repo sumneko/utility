@@ -463,6 +463,21 @@ local function divInt(big, n)
     return div(big, of(n))
 end
 
+---按数值向上取整
+---@param big BigNumber
+---@return BigNumber
+local function ceil(big)
+    local mantissa, exp = big[1], big[2]
+    if exp >= 0 then
+        local value = math.ceil(mantissa)
+        if value == mantissa then
+            return big
+        end
+        return rebuild(value, exp)
+    end
+    return rebuild(math.ceil(scale(mantissa, exp)), 0)
+end
+
 ---@param big BigNumber
 ---@return integer
 local function powerOf(big)
@@ -598,6 +613,7 @@ M.abs = abs
 M.cmp = compare
 M.mulRatio = mulRatio
 M.divInt = divInt
+M.ceil = ceil
 M.toNumber = toNumber
 M.toRatio = toRatio
 M.format = format
