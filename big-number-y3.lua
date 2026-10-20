@@ -10,6 +10,7 @@ local mabs = math.abs
 local tointeger = math.tointeger
 local floor = math.floor
 local mceil = math.ceil
+local mlog = math.log
 local huge = math.huge
 local mininteger = math.mininteger
 local maxinteger = math.maxinteger
@@ -535,6 +536,54 @@ local function ceil(big)
     return rebuild(mceil(scale(mantissa, exp)), 0)
 end
 
+---按数值向下取整
+---@param big BigNumber
+---@return BigNumber
+local function floorValue(big)
+    local mantissa, exp = big[1], big[2]
+    if exp >= 0 then
+        local value = floor(mantissa)
+        if value == mantissa then
+            return big
+        end
+        return rebuild(value, exp)
+    end
+    return rebuild(floor(scale(mantissa, exp)), 0)
+end
+
+---@param x number | string | BigNumber
+---@return number
+---@return integer
+local function partsOf(x)
+    if type(x) == 'table' then
+        return x[1], x[2]
+    end
+    local v = of(x)
+    return v[1], v[2]
+end
+
+---整数次幂（快速幂）
+---@param am number
+---@param ae integer
+---@param n integer
+---@return BigNumber
+local function powInt(am, ae, n)
+    local rm, re = 1, 0
+    local bm, be = am, ae
+    while n > 0 do
+        if n % 2 == 1 then
+            local r = mulParts(rm, re, bm, be)
+            rm, re = r[1], r[2]
+        end
+        n = n // 2
+        if n > 0 then
+            local r = mulParts(bm, be, bm, be)
+            bm, be = r[1], r[2]
+        end
+    end
+    return rebuild(rm, re)
+end
+
 ---@param big BigNumber
 ---@return integer
 local function powerOf(big)
@@ -671,6 +720,7 @@ M.cmp = compare
 M.mulRatio = mulRatio
 M.divInt = divInt
 M.ceil = ceil
+M.floor = floorValue
 M.toNumber = toNumber
 M.toRatio = toRatio
 M.format = format
@@ -781,6 +831,62 @@ M.__unm = function(a)
     end
     local v = of(a)
     return wrap(-v[1], v[2])
+end
+
+M.__pow = function(a, b)
+    local ev = of(b)
+    if ev[1] == 0 then
+        return of(1)
+    end
+    local ok, value = pcall(toNumber, ev)
+    if ok then
+        local n = tointeger(value)
+        if n and mabs(n) <= 1e9 then
+            local am, ae = partsOf(a)
+            if n >= 0 then
+                return powInt(am, ae, n)
+            end
+            local p = powInt(am, ae, -n)
+            return divParts(1, 0, p[1], p[2])
+        end
+    end
+    -- 非整数指数：a^b = 10^(b * log10(a))
+    local exponent = toRatio(ev)
+    local am, ae = partsOf(a)
+    if am == 0 then
+        if exponent > 0 then
+            return zero()
+        end
+        error('big-number: 零的负数次幂无意义')
+    end
+    if am < 0 then
+        error('big-number: 负数的非整数次幂无实数值')
+    end
+    local t = exponent * (mlog(am, 10) + ae)    if t ~= t or t >= 1e15 or t <= -1e15 then
+        error('big-number: 结果指数超出范围')
+    end
+    local k = floor(t)
+    return rebuild(10 ^ (t - k), k)
+end
+
+M.__idiv = function(a, b)
+    local am, ae = partsOf(a)
+    local bm, be = partsOf(b)
+    if bm == 0 then
+        error('big-number: 除数为零')
+    end
+    return floorValue(divParts(am, ae, bm, be))
+end
+
+M.__mod = function(a, b)
+    local am, ae = partsOf(a)
+    local bm, be = partsOf(b)
+    if bm == 0 then
+        error('big-number: 取模除数为零')
+    end
+    local fq = floorValue(divParts(am, ae, bm, be))
+    local prod = mulParts(fq[1], fq[2], bm, be)
+    return subParts(am, ae, prod[1], prod[2])
 end
 
 M.__lt = function(a, b)
