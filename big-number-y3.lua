@@ -6,9 +6,11 @@
 local M = {}
 
 local MANTISSA_MAX = 1000000000
+local PAD_MAX = MANTISSA_MAX / 10
 local NUMBER_MAX = 100000000000000
 local DIV_SCALE = 9
 local CMP_SCALE = 3
+local FLOAT_SAFE = 1e13
 
 ---@type integer[]
 local POW10 = {
@@ -85,9 +87,8 @@ local function asIntegerParts(big)
     while m < MANTISSA_MAX and m > -MANTISSA_MAX do
         m = m * 10
         e = e - 1
-        i = math.tointeger(m)
-        if i then
-            return i, e
+        if m % 1 == 0 then
+            return math.floor(m + 0.5), e
         end
     end
     return math.floor(m + 0.5), e
@@ -190,7 +191,46 @@ function M.isZero(big)
     return big[1] == 0
 end
 
----规格化：指数 > 0 时先把尾数补位到最细刻度（指数降到 0 为止），再在 |尾数| ≥ 1e9 时逐位右移
+---规格化（内部运算专用，不做入参校验）
+---@param m number
+---@param e integer
+---@return BigNumber
+local function rebuild(m, e)
+    if m == 0 then
+        return wrap(0, 0)
+    end
+    while e > 0 and m >= -PAD_MAX and m <= PAD_MAX do
+        m = m * 10
+        e = e - 1
+    end
+    if m >= MANTISSA_MAX or m <= -MANTISSA_MAX then
+        local i = math.tointeger(m)
+        if i then
+            local magnitude = i
+            if i < 0 then
+                -- mininteger 取负会溢出，用 maxinteger 代替（除以 1e10 后结果相同）
+                magnitude = i == math.mininteger and math.maxinteger or -i
+            end
+            local drop = 1
+            while drop < 10 and magnitude >= POW10[drop + 10] do
+                drop = drop + 1
+            end
+            m = magnitude // POW10[drop + 1]
+            if i < 0 then
+                m = -m
+            end
+            e = e + drop
+        else
+            while m >= MANTISSA_MAX or m <= -MANTISSA_MAX do
+                m = truncDiv10(m)
+                e = e + 1
+            end
+        end
+    end
+    return wrap(m, e)
+end
+
+---规格化（入参校验 + 归一化）
 ---@param big BigNumber
 ---@return BigNumber
 function M.normalize(big)
@@ -205,16 +245,7 @@ function M.normalize(big)
     if e ~= math.floor(e) or e > 1e15 or e < -1e15 then
         error('big-number: 指数必须是范围内的整数: ' .. tostring(e))
     end
-    e = math.tointeger(e) or e
-    while e > 0 and m >= -MANTISSA_MAX / 10 and m <= MANTISSA_MAX / 10 do
-        m = m * 10
-        e = e - 1
-    end
-    while m >= MANTISSA_MAX or m <= -MANTISSA_MAX do
-        m = truncDiv10(m)
-        e = e + 1
-    end
-    return wrap(m, e)
+    return rebuild(m, math.tointeger(e) or e)
 end
 
 ---@param a BigNumber
@@ -230,7 +261,7 @@ function M.add(a, b)
     local big, small = align(a, b)
     local diff = big[2] - small[2]
     if diff == 0 then
-        return M.normalize({ big[1] + small[1], big[2] })
+        return rebuild(big[1] + small[1], big[2])
     end
     if diff >= DIV_SCALE * 2 then
         return big
@@ -239,14 +270,43 @@ function M.add(a, b)
     if math.abs(drop) < 0.5 then
         return big
     end
-    return M.normalize({ big[1] + drop, big[2] })
+    return rebuild(big[1] + drop, big[2])
 end
 
 ---@param a BigNumber
 ---@param b BigNumber
 ---@return BigNumber
 function M.sub(a, b)
-    return M.add(a, M.neg(b))
+    local am, bm = a[1], b[1]
+    if bm == 0 then
+        return a
+    end
+    if am == 0 then
+        return wrap(-bm, b[2])
+    end
+    local ae, be = a[2], b[2]
+    local diff = ae - be
+    if diff == 0 then
+        return rebuild(am - bm, ae)
+    end
+    if diff > 0 then
+        if diff >= DIV_SCALE * 2 then
+            return a
+        end
+        local drop = bm / pow10(diff)
+        if math.abs(drop) < 0.5 then
+            return a
+        end
+        return rebuild(am - drop, ae)
+    end
+    if diff <= -DIV_SCALE * 2 then
+        return wrap(-bm, be)
+    end
+    local drop = am / pow10(-diff)
+    if math.abs(drop) < 0.5 then
+        return wrap(-bm, be)
+    end
+    return rebuild(drop - bm, be)
 end
 
 ---@param a BigNumber
@@ -257,13 +317,22 @@ function M.mul(a, b)
         return M.zero()
     end
     local am, bm = a[1], b[1]
+    -- 快路径：乘积落在安全量级内直接浮点相乘（定点浮点饱和后约 7e13，护栏取 1e13）
+    local product = am * bm
+    if product < FLOAT_SAFE and product > -FLOAT_SAFE then
+        if product >= MANTISSA_MAX / 10 or product <= -MANTISSA_MAX / 10 then
+            -- 已占满 9 位有效数字，小数部分只会是浮点噪尾
+            product = product >= 0 and math.floor(product) or -math.floor(-product)
+        end
+        return rebuild(product, a[2] + b[2])
+    end
     local ai, bi = math.tointeger(am), math.tointeger(bm)
     if ai and bi then
         -- 整数尾数：乘积 < 1e18，int64 精确
-        return M.normalize({ ai * bi, a[2] + b[2] })
+        return rebuild(ai * bi, a[2] + b[2])
     end
-    -- 小数尾数：展开成整数并压回 < 1e9，乘积同样 < 1e18
-    -- （定点运行时浮点上限约 2^46，不能直接做浮点乘法）
+    -- 小数尾数且乘积超大：展开成整数并压回 < 1e9，乘积同样 < 1e18
+    -- （定点运行时浮点上限约 2^46，超量级时不能用浮点乘法）
     local x, xe = asIntegerParts(a)
     local y, ye = asIntegerParts(b)
     while x >= MANTISSA_MAX or x <= -MANTISSA_MAX do
@@ -274,7 +343,7 @@ function M.mul(a, b)
         y = truncDiv10(y)
         ye = ye + 1
     end
-    return M.normalize({ x * y, xe + ye })
+    return rebuild(x * y, xe + ye)
 end
 
 ---@param a BigNumber
@@ -299,18 +368,12 @@ function M.div(a, b)
         bm = truncDiv10(bm)
         be = be + 1
     end
-    ---@type number
-    local q = am // bm
-    local r = am % bm
-    for _ = 1, DIV_SCALE do
-        r = r * 10
-        q = q * 10 + r // bm
-        r = r % bm
-    end
+    -- 一次除法直接得到 DIV_SCALE 位小数（am < 1e9，乘 1e9 后 < 1e18，int64 安全）
+    local q = am * pow10(DIV_SCALE) // bm
     if negative then
         q = -q
     end
-    return M.normalize({ q, ae - be - DIV_SCALE })
+    return rebuild(q, ae - be - DIV_SCALE)
 end
 
 ---@param a BigNumber
@@ -357,7 +420,7 @@ end
 ---@param percent number
 ---@return BigNumber
 function M.mulRatio(big, percent)
-    return M.div(M.mul(big, M.fromNumber(percent)), M.fromNumber(100))
+    return M.div(M.mul(big, M.of(percent)), M.of(100))
 end
 
 ---除以整数
@@ -365,7 +428,7 @@ end
 ---@param n integer
 ---@return BigNumber
 function M.divInt(big, n)
-    return M.div(big, M.fromNumber(n))
+    return M.div(big, M.of(n))
 end
 
 ---@param big BigNumber
@@ -390,15 +453,23 @@ function M.toNumber(big)
     if big[2] >= 15 or big[2] <= -15 then
         error('big-number: 超出可转普通数值的范围: ' .. M.format(big))
     end
-    if powerOf(big) >= 14 then
-        error('big-number: 超出可转普通数值的范围: ' .. M.format(big))
-    end
     local m = big[1]
     local e = big[2]
     local i = math.tointeger(m)
-    if i and e >= 0 then
-        -- 整数尾数走整数乘法：不受浮点精度与上限影响（定点运行时浮点上限约 2^46）
-        return i * pow10(e)
+    if i then
+        if e >= 0 then
+            -- 整数尾数：用整数比较上界后走整数乘法（定点运行时大数浮点除会饱和）
+            local p = pow10(e)
+            if math.abs(i) >= (NUMBER_MAX + p - 1) // p then
+                error('big-number: 超出可转普通数值的范围: ' .. M.format(big))
+            end
+            return i * p
+        end
+        local value = scale(m, e)
+        return math.tointeger(value) or value
+    end
+    if powerOf(big) >= 14 then
+        error('big-number: 超出可转普通数值的范围: ' .. M.format(big))
     end
     local value = scale(m, e)
     if value >= NUMBER_MAX or value <= -NUMBER_MAX then

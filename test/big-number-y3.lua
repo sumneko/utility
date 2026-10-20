@@ -44,6 +44,12 @@ do
 
     assert(big.isZero(big.zero()))
     assert(not big.isZero(big.fromNumber(1)))
+
+    -- 边界：mininteger 尾数取负会溢出，仍须保持符号
+    local v = big.fromParts(math.mininteger, 0)
+    assert(v[1] == -922337203 and v[2] == 10)
+    local v = big.fromParts(math.maxinteger, 0)
+    assert(v[1] == 922337203 and v[2] == 10)
 end
 
 -- 缓存收参：同一 key 复用同一对象，大数原样写回
