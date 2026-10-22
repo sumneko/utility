@@ -288,3 +288,19 @@ do
         assert(not pcall(big.fromParts, 1, 1e24))
     end
 end
+
+-- 极大/极小指数转普通数值：尾数饱和后立即返回，不能逐 18 位空转
+do
+    if FLOAT64 then
+        assert(big.toRatio(big.fromParts(1, 1e15)) == math.huge)
+        assert(big.toRatio(big.fromParts(-1, 1e15)) == -math.huge)
+        assert(big.toRatio(big.fromParts(1, -1e15)) == 0)
+        assert(big.toRatio(big.fromParts(3, 400)) == math.huge)
+        assert(big.toRatio(big.fromParts(3, -400)) == 0)
+    end
+    -- 正常量级不受影响
+    assert(big.toRatio(big.fromParts(1, -9)) == 1e-9)
+    assert(big.toRatio(big.fromParts(1, 9)) == 1e9)
+    -- 取整同样走 scale，指数极小也不能空转
+    assert(big.toNumber(big.ceil(big.fromParts(1, -1e15))) == 0)
+end

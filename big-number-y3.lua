@@ -50,12 +50,19 @@ end
 local function scale(m, k)
     -- 强制走浮点：整数尾数乘 pow10 可能超过 int64（如 857385043 * 1e11）
     m = m * 1.0
+    -- 尾数一旦饱和为 inf 或下溢为 0，继续缩放不会改变结果，直接返回
     while k >= 19 do
         m = m * pow10(18)
+        if m == huge or m == -huge or m == 0 then
+            return m
+        end
         k = k - 18
     end
     while k <= -19 do
         m = m / pow10(18)
+        if m == 0 then
+            return m
+        end
         k = k + 18
     end
     if k >= 0 then
