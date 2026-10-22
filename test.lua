@@ -22,6 +22,7 @@ dofile 'test/pool.lua'
 dofile 'test/path-recoder.lua'
 dofile 'test/merge-files.lua'
 dofile 'test/big-number-y3.lua'
+dofile 'test/base64.lua'
 
 -- 这个太慢了，最后测试
 --dofile 'test/thex2.lua'
