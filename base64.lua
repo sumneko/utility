@@ -57,6 +57,7 @@ function M.encode(s)
         buildPairMap()
         pmap = pairMap
     end
+    ---@cast pmap -?
 
     -- 一次取 45 字节（15 组），每组写入 1 个双字符
     while i + 44 <= n do
