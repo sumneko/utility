@@ -187,14 +187,16 @@ do
         local ok = pcall(fn)
         assert(not ok, '应当报错: ' .. label)
     end
+    ---@type any
+    local notString = 123
     expectError(function () aes.new('short') end, '密钥长度')
     expectError(function () aes.new(string.rep('k', 15)) end, '密钥长度 15')
-    expectError(function () aes.new(123) end, '密钥类型')
+    expectError(function () aes.new(notString) end, '密钥类型')
 
     local ctx = aes.new(string.rep('k', 16))
     local iv = string.rep('\0', 16)
     expectError(function () ctx:encryptBlock('123') end, '块长度')
-    expectError(function () ctx:encryptBlock(123) end, '块类型')
+    expectError(function () ctx:encryptBlock(notString) end, '块类型')
     expectError(function () ctx:decryptBlock('') end, '空块')
     expectError(function () ctx:encryptCBC('x', 'iv') end, 'iv 长度')
     expectError(function () ctx:encryptCBC('123', iv, false) end, '关闭填充但长度不合法')
