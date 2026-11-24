@@ -830,6 +830,13 @@ function Instance:get(name)
     return method.get(self)
 end
 
+---属性（含中间量）是否可用
+---@param name string
+---@return boolean
+function Instance:has(name)
+    return self.methods[name] ~= nil
+end
+
 ---@param name string
 ---@return number
 function Instance:getMin(name)
