@@ -850,6 +850,51 @@ function Instance:getMax(name)
     return method.getMax(self)
 end
 
+---@class Attribute.Modifier
+---@field instance Attribute.Instance
+---@field name string
+---@field value number
+---@field removed? boolean
+local Modifier = {}
+---@package
+Modifier.__index = Modifier
+
+---创建一个属性增量持有物，撤销（remove）时自动扣回
+---@param name string
+---@param value number
+---@return Attribute.Modifier
+function Instance:modifier(name, value)
+    self:add(name, value)
+    return setmetatable({
+        instance = self,
+        name = name,
+        value = value,
+    }, Modifier)
+end
+
+---更新持有物的值，按差值增量调整
+---@param value number
+function Modifier:update(value)
+    if self.removed then
+        return
+    end
+    local delta = value - self.value
+    if delta == 0 then
+        return
+    end
+    self.value = value
+    self.instance:add(self.name, delta)
+end
+
+---撤销这个持有物，把增量扣回
+function Modifier:remove()
+    if self.removed then
+        return
+    end
+    self.removed = true
+    self.instance:add(self.name, -self.value)
+end
+
 ---@package
 Instance.eventID = 0
 
