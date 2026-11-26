@@ -327,6 +327,32 @@ do
     assert(list[3][1] == 2 and list[3][2] == '属性3')
 end
 
+---@diagnostic disable: invisible
+do
+    local system = attributeSystem.create()
+
+    local maxHp = system:define('最大生命')
+        : setFormula('({!} + {力量} * 10) * (1 + 0.01 * {%})')
+    system:define('力量')
+
+    local instance = system:instance()
+    assert(not system.compiled) -- 惰性编译，建实例不触发编译
+
+    instance:set('最大生命', 1000)
+    instance:set('力量', 100)
+    assert(system.compiled) -- 首次读写属性时触发编译
+    assert(instance:get('最大生命') == 2000)
+
+    maxHp:setFormula('({!} + {力量} * 20) * (1 + 0.01 * {%})')
+    assert(not system.compiled) -- 修改模板后编译结果被丢弃
+
+    instance:set('力量', 200) -- 写依赖后按新模板自动重算
+    assert(system.compiled)
+    assert(instance:get('最大生命') == 5000)
+    assert(instance:get('最大生命!') == 1000)
+end
+---@diagnostic enable: invisible
+
 -------------- 性能测试 -------------
 
 do
