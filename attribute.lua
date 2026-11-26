@@ -60,9 +60,7 @@ end
 ---@return Attribute.Instance
 function System:instance(customData)
     self:compile()
-    local instance = API.createInstance(self)
-
-    return instance:init(self, customData)
+    return API.createInstance(self, customData)
 end
 
 function System:compile()
@@ -995,9 +993,10 @@ end
 
 ---@package
 ---@param system Attribute.System
+---@param customData? any
 ---@return Attribute.Instance
-function API.createInstance(system)
-    return setmetatable({}, Instance):init(system)
+function API.createInstance(system, customData)
+    return setmetatable({}, Instance):init(system, customData)
 end
 
 return API
