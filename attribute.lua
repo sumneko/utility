@@ -710,7 +710,7 @@ return cache[{key}] or 0
         return string.format('(cache[%q] or 0)', key)
     end)
 
-    local params = {
+    local codeParams = {
         name = name,
         code = code,
         getMin = self:compileGetMinCode(),
@@ -738,16 +738,16 @@ value = {code:s}
 {checkMax:s}
 cache[{name}] = value
 return value
-]], params),
+]], codeParams),
         getMin = loadCode([[
 local methods = instance.methods
 return {getMin:s}
-]], params),
+]], codeParams),
         getMax = loadCode([[
 local cache = instance.cache
 local methods = instance.methods
 return {getMax:s}
-]], params),
+]], codeParams),
         checkAttention = self:compileCheckAttention(name),
     }
 end

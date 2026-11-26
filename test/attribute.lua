@@ -353,6 +353,53 @@ do
 end
 ---@diagnostic enable: invisible
 
+---@diagnostic disable: invisible
+do
+    local system = attributeSystem.create()
+
+    system:define('生命', true)
+    local maxHp = system:define('最大生命'):setMax('生命', true)
+    local instance = system:instance()
+
+    -- 复杂属性不能保留比率，编译失败
+    assert(not pcall(instance.set, instance, '生命', 100))
+    assert(not system.compiled)
+
+    -- 修正模板后陷阱重装，下次访问重新编译成功
+    maxHp:setMax('生命')
+    instance:set('生命', 100)
+    assert(system.compiled)
+    assert(instance:getMax('最大生命') == 100)
+
+    -- 手动 reset 后按当前模板重编译
+    system:reset()
+    assert(not system.compiled)
+    instance:set('生命', 200)
+    assert(instance:getMax('最大生命') == 200)
+end
+---@diagnostic enable: invisible
+
+---@diagnostic disable: invisible
+do
+    local system = attributeSystem.create()
+
+    local atk = system:define('攻击'):setFormula('{!} * (1 + 0.01 * {加成})')
+    system:define('加成', true)
+
+    local instance = system:instance()
+    instance:set('攻击', 1000)
+    instance:set('加成', 100)
+    assert(instance:get('攻击') == 2000)
+
+    -- 编译后新增属性，依赖闭包重建
+    system:define('力量', true)
+    assert(not system.compiled)
+    atk:setFormula('{!} * (1 + 0.01 * {加成}) + {力量}')
+    instance:set('力量', 10)
+    assert(instance:get('攻击') == 2010)
+end
+---@diagnostic enable: invisible
+
 -------------- 性能测试 -------------
 
 do
