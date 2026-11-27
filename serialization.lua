@@ -65,7 +65,7 @@ local encode
 ---@param t table
 ---@return any[] keys
 ---@return boolean allSimpleKey
----@return boolean allStringKey
+---@return string|false keyType -- 键类型一致时为 'string' 或 'number'，混合或其它类型为 false
 ---@return integer? arrayLen
 local function peekTable(t)
     ---@type integer?
@@ -73,12 +73,15 @@ local function peekTable(t)
     local arrayLen
     local keys = {}
     local allSimpleKey = true
-    local allStringKey = true
+    ---@type string|false
+    local keyType = 'string'
     for k in next, t do
         keys[#keys+1] = k
         local tp = type(k)
         if tp == 'number' then
-            allStringKey = false
+            if keyType == 'string' then
+                keyType = 'number'
+            end
             if mathType(k) == 'integer' and k > 0 then
                 if maxInteger and k > maxInteger then
                     maxInteger = k --[[@as integer]]
@@ -88,18 +91,21 @@ local function peekTable(t)
                 maxInteger = nil
             end
         elseif tp == 'string' then
+            if keyType == 'number' then
+                keyType = false
+            end
             maxInteger = nil
         else
             maxInteger = nil
             allSimpleKey = false
-            allStringKey = false
+            keyType = false
         end
     end
     -- 允许一定程度上的稀疏，毕竟稀疏的部分只占一个字节
     if maxInteger and #keys * 4 >= maxInteger then
         arrayLen = maxInteger
     end
-    return keys, allSimpleKey, allStringKey, arrayLen
+    return keys, allSimpleKey, keyType, arrayLen
 end
 
 local function compareKey(a, b)
@@ -253,7 +259,7 @@ local encodeMethods;encodeMethods = {
 
         local myRef = ex.refid
 
-        local keys, allSimpleKey, allStringKey, arrayLen = peekTable(value)
+        local keys, allSimpleKey, keyType, arrayLen = peekTable(value)
         if arrayLen then
             buf[#buf+1] = ArrayB
 
@@ -263,8 +269,8 @@ local encodeMethods;encodeMethods = {
 
             buf[#buf+1] = ArrayE
         elseif allSimpleKey then
-            if allStringKey then
-                -- 全字符串键可用默认比较，省掉一次 Lua 层比较函数调用
+            if keyType then
+                -- 键类型一致时可用默认比较，省掉一次 Lua 层比较函数调用
                 tableSort(keys)
             else
                 tableSort(keys, compareKey)
