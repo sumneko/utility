@@ -98,6 +98,14 @@ local function peekTable(t)
     return keys, allSimpleKey, arrayLen
 end
 
+local function compareKey(a, b)
+    local ta, tb = type(a), type(b)
+    if ta == tb then
+        return a < b
+    end
+    return ta == 'number'
+end
+
 local encodeMethods;encodeMethods = {
     ['number'] = function (value, buf)
         if mathType(value) == 'integer' then
@@ -251,13 +259,7 @@ local encodeMethods;encodeMethods = {
 
             buf[#buf+1] = ArrayE
         elseif allSimpleKey then
-            tableSort(keys, function (a, b)
-                local ta, tb = type(a), type(b)
-                if ta == tb then
-                    return a < b
-                end
-                return ta == 'number'
-            end)
+            tableSort(keys, compareKey)
 
             local keyBuf = {}
             local i = 1
