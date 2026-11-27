@@ -65,6 +65,7 @@ local encode
 ---@param t table
 ---@return any[] keys
 ---@return boolean allSimpleKey
+---@return boolean allStringKey
 ---@return integer? arrayLen
 local function peekTable(t)
     ---@type integer?
@@ -72,10 +73,12 @@ local function peekTable(t)
     local arrayLen
     local keys = {}
     local allSimpleKey = true
+    local allStringKey = true
     for k in next, t do
         keys[#keys+1] = k
         local tp = type(k)
         if tp == 'number' then
+            allStringKey = false
             if mathType(k) == 'integer' and k > 0 then
                 if maxInteger and k > maxInteger then
                     maxInteger = k --[[@as integer]]
@@ -89,13 +92,14 @@ local function peekTable(t)
         else
             maxInteger = nil
             allSimpleKey = false
+            allStringKey = false
         end
     end
     -- 允许一定程度上的稀疏，毕竟稀疏的部分只占一个字节
     if maxInteger and #keys * 4 >= maxInteger then
         arrayLen = maxInteger
     end
-    return keys, allSimpleKey, arrayLen
+    return keys, allSimpleKey, allStringKey, arrayLen
 end
 
 local function compareKey(a, b)
@@ -249,7 +253,7 @@ local encodeMethods;encodeMethods = {
 
         local myRef = ex.refid
 
-        local keys, allSimpleKey, arrayLen = peekTable(value)
+        local keys, allSimpleKey, allStringKey, arrayLen = peekTable(value)
         if arrayLen then
             buf[#buf+1] = ArrayB
 
@@ -259,7 +263,12 @@ local encodeMethods;encodeMethods = {
 
             buf[#buf+1] = ArrayE
         elseif allSimpleKey then
-            tableSort(keys, compareKey)
+            if allStringKey then
+                -- 全字符串键可用默认比较，省掉一次 Lua 层比较函数调用
+                tableSort(keys)
+            else
+                tableSort(keys, compareKey)
+            end
 
             local keyBuf = {}
             local i = 1
